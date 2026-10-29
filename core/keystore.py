@@ -1,4 +1,4 @@
-import time, uuid
+import os, time, uuid
 from .config import DATA, LOCK, read_json, write_json
 
 KEYS_FILE = DATA / "keys.json"
@@ -27,12 +27,27 @@ def detect_provider(key: str) -> str:
     return "mistral" if key else "gemini"
 
 
+ENV_NAMES = {"gemini": "GEMINI_API_KEY", "groq": "GROQ_API_KEY", "cerebras": "CEREBRAS_API_KEY",
+             "openrouter": "OPENROUTER_API_KEY", "mistral": "MISTRAL_API_KEY"}
+
+
+def _env_keys():
+    out = []
+    for prov, var in ENV_NAMES.items():
+        for i, k in enumerate([x.strip() for x in os.getenv(var, "").split(",") if x.strip()], 1):
+            p = PROVIDERS[prov]
+            out.append({"id": f"env-{prov}-{i}", "provider": prov, "key": k, "model": os.getenv(var.replace("API_KEY", "MODEL"), p["model"]),
+                        "role": "both", "enabled": True, "paid": False, "price_in": 0.0, "price_out": 0.0,
+                        "rpm": p["rpm"], "tokens_in": 0, "tokens_out": 0, "env": True})
+    return out
+
+
 def load_keys():
-    return read_json(KEYS_FILE, [])
+    return read_json(KEYS_FILE, []) + _env_keys()
 
 
 def save_keys(keys):
-    write_json(KEYS_FILE, keys)
+    write_json(KEYS_FILE, [k for k in keys if not str(k.get("id", "")).startswith("env-")])
 
 
 def add_key(provider, key, model="", role="both", paid=False, price_in=0.0, price_out=0.0, rpm=0):

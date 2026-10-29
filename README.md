@@ -1,3 +1,12 @@
+---
+title: Sub
+emoji: 📚
+sdk: gradio
+sdk_version: 6.31.0
+app_file: app.py
+pinned: false
+---
+
 # Sub — مترجم الروايات والملفات
 
 ترجمة PDF / EPUB / TXT بين الإنجليزية والعربية واليابانية عبر APIs مجانية (Gemini, Groq, Cerebras, OpenRouter, Mistral)،
@@ -27,3 +36,11 @@ python app.py          # ثم افتح http://127.0.0.1:7860
 - مخرج PDF الياباني يحتاج خطاً: ضع `NotoSansJP-Regular.ttf` في مجلد `fonts/`.
 - حدود الطبقات المجانية تتغير، والترجمة تتوقف مؤقتاً عند الوصول لها وتُستكمل بزر **استكمال**.
 - عداد الصرف يحسب المفاتيح المدفوعة فقط ويوقفها عند السقف الذي تحدده.
+
+## الاستضافة المجانية الثابتة (Hugging Face Spaces)
+أضف في إعدادات الـ Space (Variables and secrets) هذي الأسرار:
+- `SUB_PASSWORD`: كلمة السر (تبقى بعد إعادة التشغيل)
+- `GEMINI_API_KEY`, `GROQ_API_KEY`, `CEREBRAS_API_KEY`, `OPENROUTER_API_KEY`, `MISTRAL_API_KEY`
+  (تقدر تحط أكثر من مفتاح للمزود الواحد مفصولة بفاصلة)
+
+قرص الـ Space مؤقت: المفاتيح وكلمة السر تبقى لأنها أسرار، لكن المهام والملفات المترجمة تضيع عند إعادة التشغيل، فنزّل ناتجك أول بأول.

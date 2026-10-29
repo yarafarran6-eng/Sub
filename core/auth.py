@@ -5,6 +5,7 @@ from .config import DATA, read_json, write_json
 FILE = DATA / "auth.json"
 INITIAL_PASSWORD = "2222"
 _fails = {"n": 0, "until": 0.0}
+ENV_PW = os.getenv("SUB_PASSWORD", "")
 
 
 def _hash(pw: str, salt: bytes) -> str:
@@ -25,8 +26,11 @@ def check(username: str, password: str) -> bool:
     now = time.time()
     if now < _fails["until"]:
         return False
-    d = _load()
-    ok = hmac.compare_digest(_hash(password or "", bytes.fromhex(d["salt"])), d["hash"])
+    if ENV_PW:
+        ok = hmac.compare_digest((password or "").encode(), ENV_PW.encode())
+    else:
+        d = _load()
+        ok = hmac.compare_digest(_hash(password or "", bytes.fromhex(d["salt"])), d["hash"])
     if ok:
         _fails["n"] = 0
     else:
@@ -38,10 +42,14 @@ def check(username: str, password: str) -> bool:
 
 
 def must_change() -> bool:
+    if ENV_PW:
+        return False
     return bool(_load().get("must_change"))
 
 
 def change(old: str, new: str) -> str:
+    if ENV_PW:
+        return "كلمة السر مضبوطة من إعدادات الاستضافة (SUB_PASSWORD)، غيّرها من هناك"
     d = _load()
     if not hmac.compare_digest(_hash(old or "", bytes.fromhex(d["salt"])), d["hash"]):
         return "كلمة السر الحالية غير صحيحة"

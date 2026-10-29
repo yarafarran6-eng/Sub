@@ -288,5 +288,5 @@ with gr.Blocks(title="Sub — مترجم الروايات") as demo:
 
 if __name__ == "__main__":
     demo.queue(default_concurrency_limit=8).launch(
-        server_name=os.getenv("HOST", "127.0.0.1"), server_port=int(os.getenv("PORT", "7860")),
+        server_name=os.getenv("HOST") or ("0.0.0.0" if os.getenv("SPACE_ID") else "127.0.0.1"), server_port=int(os.getenv("PORT", "7860")),
         auth=auth.check, css=CSS, max_file_size="200mb")
