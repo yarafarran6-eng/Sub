@@ -1,12 +1,12 @@
-"""One OpenAI-compatible chat call. Gemini, Groq, Cerebras, OpenRouter and Mistral all speak it."""
+"""One OpenAI-compatible chat call. Gemini, Groq, Cerebras, OpenRouter, Mistral, Ollama all speak it."""
 import json, re
 import httpx
 from .keystore import PROVIDERS
 
 
 class RateLimited(Exception):
-    def __init__(self, retry_after=30.0):
-        self.retry_after = retry_after
+    def __init__(self, retry_after=30.0, reason="minute", detail=""):
+        self.retry_after, self.reason, self.detail = retry_after, reason, detail
 
 
 class KeyDead(Exception):
@@ -21,7 +21,43 @@ class BadRequest(Exception):
     pass
 
 
-def _mock(messages, task):
+def _wait_from(r):
+    ra = r.headers.get("retry-after")
+    if ra:
+        try:
+            return max(float(ra), 1.0)
+        except ValueError:
+            pass
+    t = r.text
+    m = re.search(r'"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"', t)
+    if m:
+        return float(m.group(1)) + 1
+    m = re.search(r"try again in\s+(?:(\d+)h)?\s*(?:(\d+)m)?\s*(?:(\d+(?:\.\d+)?)s)?", t, re.I)
+    if m and any(m.groups()):
+        h, mi, s = (float(x) if x else 0.0 for x in m.groups())
+        return h * 3600 + mi * 60 + s + 1
+    return 30.0
+
+
+def _reason(text, wait):
+    t = text.lower()
+    if wait > 900 or any(w in t for w in ("per day", "perday", "daily", "tpd", "rpd", "per_day")):
+        return "day"
+    return "minute"
+
+
+_mock_n = {"n": 0}
+
+
+def _mock(key, messages, task):
+    _mock_n["n"] += 1
+    if key["key"].startswith("mock-dead"):
+        raise KeyDead("401: mock invalid key")
+    if key["key"].startswith("mock-limit"):
+        key_n = _mock_n.setdefault(key["key"], 0) + 1
+        _mock_n[key["key"]] = key_n
+        if key_n <= 3 or key_n % 3 == 0:
+            raise RateLimited(1.5, "minute", "mock limit")
     user = messages[-1]["content"]
     if task == "translate":
         out = []
@@ -39,24 +75,25 @@ def _mock(messages, task):
 def chat(key, messages, max_tokens=4096, temperature=0.3, task="translate", timeout=180):
     prov = PROVIDERS[key["provider"]]
     if key["provider"] == "mock":
-        return _mock(messages, task), {"in": 10, "out": 10}
-    body = {"model": key["model"], "messages": messages, "temperature": temperature,
-            "max_tokens": max_tokens}
+        return _mock(key, messages, task), {"in": 10, "out": 10}
+    base = (key.get("base") or prov["base"]).rstrip("/")
+    if not base:
+        raise BadRequest("لم تحدد عنوان الخادم")
+    headers = {"Authorization": f"Bearer {key['key']}"} if key.get("key") else {}
+    if key["provider"] in ("ollama", "custom"):
+        timeout = max(timeout, 900)
+    body = {"model": key["model"], "messages": messages, "temperature": temperature, "max_tokens": max_tokens}
     try:
-        r = httpx.post(prov["base"] + "/chat/completions", json=body, timeout=timeout,
-                       headers={"Authorization": f"Bearer {key['key']}"})
+        r = httpx.post(base + "/chat/completions", json=body, timeout=timeout, headers=headers)
     except (httpx.TimeoutException, httpx.TransportError) as e:
-        raise Transient(str(e))
+        raise Transient(f"تعذر الاتصال: {e}")
     if r.status_code == 429:
-        try:
-            ra = float(r.headers.get("retry-after", 30))
-        except ValueError:
-            ra = 30.0
-        raise RateLimited(max(ra, 5.0))
+        w = _wait_from(r)
+        raise RateLimited(w, _reason(r.text, w), r.text[:200])
     if r.status_code in (401, 403):
-        raise KeyDead(f"{r.status_code}: {r.text[:200]}")
+        raise KeyDead(f"{r.status_code}: {r.text[:160]}")
     if r.status_code >= 500:
-        raise Transient(f"{r.status_code}")
+        raise Transient(f"{r.status_code}: {r.text[:100]}")
     if r.status_code >= 400:
         raise BadRequest(f"{r.status_code}: {r.text[:300]}")
     data = r.json()

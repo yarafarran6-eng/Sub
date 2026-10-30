@@ -2,7 +2,7 @@ import concurrent.futures as cf, re
 from . import llm
 from .config import LANGS, get_settings
 from .keystore import PROVIDERS, load_keys
-from .pool import call
+from .pool import call, NoKeys, Stopped
 
 MARK = re.compile(r"^\s*\[(P_\d+)\]\s?(.*)$")
 
@@ -63,26 +63,26 @@ def make_chunks(units, max_chars):
     return chunks
 
 
-def _translate_chunk(chunk, sysmsg, depth=0):
+def _translate_chunk(chunk, sysmsg, stop=None, depth=0):
     user = "\n".join(f"[{u['id']}] {u['text'].replace(chr(10), ' ')}" for u in chunk)
     max_tok = min(8000, max(1024, int(len(user) * 1.3)))
     try:
         text = call([{"role": "system", "content": sysmsg}, {"role": "user", "content": user}],
-                    role="translate", max_tokens=max_tok, temperature=0.3, task="translate")
+                    role="translate", max_tokens=max_tok, temperature=0.3, task="translate", stop=stop)
     except llm.BadRequest:
         if len(chunk) > 1 and depth < 4:
             mid = len(chunk) // 2
-            return {**_translate_chunk(chunk[:mid], sysmsg, depth + 1),
-                    **_translate_chunk(chunk[mid:], sysmsg, depth + 1)}
+            return {**_translate_chunk(chunk[:mid], sysmsg, stop, depth + 1),
+                    **_translate_chunk(chunk[mid:], sysmsg, stop, depth + 1)}
         raise
     got = parse_response(text)
     missing = [u for u in chunk if not got.get(u["id"])]
     if missing and len(missing) < len(chunk) and depth < 3:
-        got.update(_translate_chunk(missing, sysmsg, depth + 1))
+        got.update(_translate_chunk(missing, sysmsg, stop, depth + 1))
     elif missing and len(chunk) > 1 and depth < 3:
         mid = len(chunk) // 2
-        got.update(_translate_chunk(chunk[:mid], sysmsg, depth + 1))
-        got.update(_translate_chunk(chunk[mid:], sysmsg, depth + 1))
+        got.update(_translate_chunk(chunk[:mid], sysmsg, stop, depth + 1))
+        got.update(_translate_chunk(chunk[mid:], sysmsg, stop, depth + 1))
     return got
 
 
@@ -94,23 +94,31 @@ def chunk_budget():
 
 
 def translate_all(units, src, tgt, ctx, style, golden, on_progress=None, should_stop=lambda: False):
-    """Fills u['tr'] for every translatable unit. Resumable: units with a translation are skipped."""
+    """Fills u['tr'] for every translatable unit. Resumable: units with a translation are skipped.
+    on_progress(n_new_units, n_chunks_done, n_chunks_total) is called after every finished chunk."""
     sysmsg = system_prompt(src, tgt, ctx, style, golden)
     todo = [u for u in units if u.get("translate") and not u.get("tr")]
     chunks = make_chunks(todo, chunk_budget())
-    total, done = len(chunks), 0
+    total, done, fatal = len(chunks), 0, None
     by_id = {u["id"]: u for u in units}
     workers = max(1, min(get_settings()["max_workers"], len([k for k in load_keys() if k.get("enabled")]) * 3 or 1))
     with cf.ThreadPoolExecutor(workers) as ex:
-        futs = {ex.submit(_translate_chunk, c, sysmsg): c for c in chunks}
+        futs = {ex.submit(_translate_chunk, c, sysmsg, should_stop): c for c in chunks}
         for f in cf.as_completed(futs):
             if should_stop():
                 for g in futs:
                     g.cancel()
                 break
-            chunk = futs[f]
+            chunk, n_new = futs[f], 0
             try:
                 got = f.result()
+            except NoKeys as e:
+                fatal = str(e)
+                for g in futs:
+                    g.cancel()
+                break
+            except Stopped:
+                got = {}
             except Exception as e:  # keep going; failed paragraphs are retried on resume
                 got = {}
                 for u in chunk:
@@ -120,7 +128,10 @@ def translate_all(units, src, tgt, ctx, style, golden, on_progress=None, should_
                 if t:
                     by_id[u["id"]]["tr"] = t
                     u.pop("error", None)
+                    n_new += 1
             done += 1
             if on_progress:
-                on_progress(done, total)
+                on_progress(n_new, done, total)
+    if fatal:
+        raise NoKeys(fatal)
     return sum(1 for u in units if u.get("translate") and not u.get("tr"))

@@ -10,13 +10,15 @@ def _has_letters(s):
     return bool(re.search(r"[^\W\d_]", s, re.UNICODE))
 
 
-def parse_pdf(path, img_dir):
+def parse_pdf(path, img_dir, on_page=None):
     import fitz
     img_dir = Path(img_dir)
     img_dir.mkdir(parents=True, exist_ok=True)
     doc = fitz.open(path)
     units, sizes, scanned = [], [], []
     for pno, page in enumerate(doc):
+        if on_page:
+            on_page(pno + 1, len(doc))
         W = page.rect.width
         d = page.get_text("dict")
         blocks = []
@@ -151,10 +153,10 @@ def parse_txt(path):
     return units, {"pages": max(1, len(raw) // 2000), "scanned_pages": []}
 
 
-def parse_any(path, img_dir):
+def parse_any(path, img_dir, on_page=None):
     ext = Path(path).suffix.lower()
     if ext == ".pdf":
-        return "pdf", *parse_pdf(path, img_dir)
+        return "pdf", *parse_pdf(path, img_dir, on_page)
     if ext == ".epub":
         return "epub", *parse_epub(path)
     return "txt", *parse_txt(path)

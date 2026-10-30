@@ -26,10 +26,10 @@ def _batches(units, max_chars):
     return out
 
 
-def _run_batch(batch, system, max_tok=3000):
+def _run_batch(batch, system, stop=None, max_tok=3000):
     user = "\n\n".join(f"[{u['id']}]\nSOURCE: {u['text']}\nTRANSLATION: {u['tr']}" for u in batch)
     text = call([{"role": "system", "content": system}, {"role": "user", "content": user}],
-                role="edit", max_tokens=max_tok, temperature=0.2, task="edit")
+                role="edit", max_tokens=max_tok, temperature=0.2, task="edit", stop=stop)
     data = extract_json(text, "[") or []
     return data if isinstance(data, list) else []
 
@@ -68,7 +68,7 @@ def edit_pass(units, src, tgt, ctx, style, sensitivity="medium", on_progress=Non
     applied, done = [], 0
     workers = max(1, min(get_settings()["max_workers"], len([k for k in load_keys() if k.get("enabled")]) * 2 or 1))
     with cf.ThreadPoolExecutor(workers) as ex:
-        futs = {ex.submit(_run_batch, b, system): b for b in batches}
+        futs = {ex.submit(_run_batch, b, system, should_stop): b for b in batches}
         for f in cf.as_completed(futs):
             if should_stop():
                 break
