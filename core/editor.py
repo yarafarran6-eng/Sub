@@ -67,7 +67,8 @@ def edit_pass(units, src, tgt, ctx, style, sensitivity="medium", on_progress=Non
     batches = _batches(units, _editor_chars())
     applied, done = [], 0
     workers = max(1, min(get_settings()["max_workers"], len([k for k in load_keys() if k.get("enabled")]) * 2 or 1))
-    with cf.ThreadPoolExecutor(workers) as ex:
+    ex = cf.ThreadPoolExecutor(workers)
+    try:
         futs = {ex.submit(_run_batch, b, system, should_stop): b for b in batches}
         for f in cf.as_completed(futs):
             if should_stop():
@@ -80,6 +81,8 @@ def edit_pass(units, src, tgt, ctx, style, sensitivity="medium", on_progress=Non
             done += 1
             if on_progress:
                 on_progress(done, len(batches))
+    finally:
+        ex.shutdown(wait=False, cancel_futures=True)
     return applied
 
 

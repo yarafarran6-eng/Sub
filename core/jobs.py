@@ -3,10 +3,12 @@ import queue, shutil, threading, time, traceback, uuid
 from pathlib import Path
 from . import parser, translator, editor, glossary
 from .config import JOBS, LOCK, read_json, write_json
-from .pool import POOL, NoKeys
+from .pool import POOL, NoKeys, Stopped
 
 _q = queue.Queue()
 _stop = set()
+_running, _queued, _resume_after = set(), set(), set()
+_ctl = threading.Lock()
 _started = False
 
 
@@ -24,10 +26,13 @@ def save_meta(jid, meta):
 
 
 def save_units(jid, units):
-    write_json(_dir(jid) / "units.json", units)
+    if _dir(jid).exists():
+        write_json(_dir(jid) / "units.json", units)
 
 
 def set_state(jid, **kw):
+    if not _dir(jid).exists():
+        return
     with LOCK:
         meta = read_json(_dir(jid) / "meta.json", {})
         meta.update(kw)
@@ -50,15 +55,31 @@ def create(path, src, tgt, style="", golden="", sensitivity="medium"):
 
 
 def enqueue(jid):
-    _stop.discard(jid)
+    """Returns what happened: queued / already_running / already_queued / will_resume."""
+    with _ctl:
+        if jid in _running:
+            if jid in _stop:                  # it is stopping right now: restart it as soon as it has stopped
+                _resume_after.add(jid)
+                return "will_resume"
+            return "already_running"
+        if jid in _queued:
+            return "already_queued"
+        _stop.discard(jid)
+        _queued.add(jid)
     set_state(jid, status="queued", stage="في الطابور", msg="",
               live={"phase": "queued", "label": "ينتظر دوره في الطابور"})
     _q.put(jid)
     ensure_worker()
+    return "queued"
 
 
 def cancel(jid):
-    _stop.add(jid)
+    with _ctl:
+        _stop.add(jid)
+        _resume_after.discard(jid)
+        running = jid in _running
+    if running:
+        set_state(jid, stage="يتوقف الآن...", msg="جاري الإيقاف: ينتظر انتهاء الطلبات الجارية (ثواني).")
 
 
 def list_jobs():
@@ -71,6 +92,7 @@ def list_jobs():
 
 
 def delete(jid):
+    cancel(jid)
     shutil.rmtree(_dir(jid), ignore_errors=True)
 
 
@@ -110,6 +132,8 @@ def _process(jid):
         set_state(jid, status="running", stage="قراءة الملف", pct=1, live=live, msg="")
         if not units:
             def on_page(i, n):
+                if stop():
+                    raise Stopped()
                 live.update(label=f"يقرأ الملف: الصفحة {i} من {n}", p_done=i, p_total=n)
                 push(stage="قراءة الملف", pct=1 + int(4 * i / max(n, 1)), live=live)
             kind, units, info = parser.parse_any(str(next(d.glob("source.*"))), str(d / "img"), on_page)
@@ -126,7 +150,7 @@ def _process(jid):
             live = {"phase": "context", "phase_start": time.time(),
                     "label": "يرسل عينات من النص لنموذج الذكاء لاستخراج أسماء الشخصيات وجنسها والمصطلحات والنبرة"}
             set_state(jid, stage="بناء بطاقة السياق", pct=6, live=live)
-            ctx = glossary.build_context(units, meta["src"], meta["tgt"], meta["style"])
+            ctx = glossary.build_context(units, meta["src"], meta["tgt"], meta["style"], stop)
             set_state(jid, ctx=ctx)
             meta["ctx"] = ctx
 
@@ -188,6 +212,10 @@ def _process(jid):
                 "p_total": p_total, "p_done": p_total, "word": kind_word}
         set_state(jid, status="ready", stage="جاهزة للمعاينة", pct=100, live=live, msg=meta.get("msg", ""))
         POOL.log(f"✅ انتهت «{meta['name']}»، جاهزة للمعاينة والتصدير")
+    except Stopped:
+        set_state(jid, status="stopped", stage="أُوقفت", live={"phase": "stopped", "label": "أوقفتها يدوياً"},
+                  msg="أُوقفت يدوياً. اضغط استكمال لتكمل من حيث وقفت.")
+        POOL.log("⏹ أُوقفت المهمة يدوياً")
     except NoKeys as e:
         set_state(jid, status="partial", stage="توقفت: لا مفاتيح صالحة", msg=str(e),
                   live={"phase": "stopped", "label": "لا يوجد مفتاح صالح"})
@@ -201,8 +229,30 @@ def _process(jid):
 def _worker():
     while True:
         jid = _q.get()
-        if _dir(jid).exists():
+        with _ctl:
+            _queued.discard(jid)
+            if not _dir(jid).exists():
+                continue
+            if jid in _stop:                      # stopped while still waiting in the queue
+                _stop.discard(jid)
+                skip = True
+            else:
+                _running.add(jid)
+                skip = False
+        if skip:
+            set_state(jid, status="stopped", stage="أُوقفت", msg="أُوقفت قبل أن تبدأ. اضغط استكمال.",
+                      live={"phase": "stopped", "label": "موقوفة"})
+            continue
+        try:
             _process(jid)
+        finally:
+            with _ctl:
+                _running.discard(jid)
+                _stop.discard(jid)
+                again = jid in _resume_after
+                _resume_after.discard(jid)
+            if again and _dir(jid).exists():
+                enqueue(jid)
 
 
 def ensure_worker():

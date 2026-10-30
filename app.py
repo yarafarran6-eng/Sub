@@ -175,14 +175,19 @@ def job_action(jid, what):
     guard()
     if not jid:
         raise gr.Error("اختر ملفاً من القائمة")
+    msgs = {"queued": "✅ رجع للطابور وبيكمل من حيث وقف.",
+            "already_running": "ℹ الملف يعمل الآن، ما يحتاج استكمال. تابعه من لوحة المتابعة.",
+            "already_queued": "ℹ الملف في الطابور فعلاً وينتظر دوره.",
+            "will_resume": "⏳ جاري الإيقاف، وبيستأنف تلقائياً بعد ثواني."}
     if what == "resume":
-        jobs.enqueue(jid)
+        msg = msgs[jobs.enqueue(jid)]
     elif what == "stop":
         jobs.cancel(jid)
-    elif what == "delete":
-        jobs.cancel(jid)
+        msg = "⏹ جاري الإيقاف. قد ياخذ ثواني لين تنتهي الطلبات الجارية، وبعدها اضغط استكمال متى ما بغيت."
+    else:
         jobs.delete(jid)
-    return gr.update(choices=job_choices(), value=None if what == "delete" else jid)
+        msg = "🗑 حُذف الملف."
+    return gr.update(choices=job_choices(), value=None if what == "delete" else jid), msg
 
 
 def tick(jid):
@@ -407,6 +412,7 @@ with gr.Blocks(title="مترجم الروايات") as demo:
                 b_resume = gr.Button("استكمال")
                 b_stop = gr.Button("إيقاف")
                 b_del = gr.Button("حذف")
+            jmsg = gr.Markdown()
             mon = gr.HTML(monitor.monitor_html)
             gr.HTML("<div class='step'><i>⏱</i>كل الملفات</div>")
             jlist = gr.HTML(monitor.jobs_html)
@@ -491,9 +497,9 @@ with gr.Blocks(title="مترجم الروايات") as demo:
     b_model.click(lambda k, m: key_action(k, "model", m), [ksel, k_newmodel], [kpanel, ksel, kmsg])
     b_testall.click(test_all, None, [kpanel, kmsg])
     go.click(add_jobs, [files, src, tgt, style, golden, sens], [gmsg, jsel])
-    b_resume.click(lambda j: job_action(j, "resume"), jsel, jsel)
-    b_stop.click(lambda j: job_action(j, "stop"), jsel, jsel)
-    b_del.click(lambda j: job_action(j, "delete"), jsel, jsel)
+    b_resume.click(lambda j: job_action(j, "resume"), jsel, [jsel, jmsg])
+    b_stop.click(lambda j: job_action(j, "stop"), jsel, [jsel, jmsg])
+    b_del.click(lambda j: job_action(j, "delete"), jsel, [jsel, jmsg])
     b_load.click(load_review, rsel, [grid, ctx, rinfo])
     b_save.click(save_review, [rsel, grid, ctx], rmsg)
     b_chat.click(run_chat, [rsel, chat, grid], [grid, rmsg])

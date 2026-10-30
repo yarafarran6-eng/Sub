@@ -42,7 +42,7 @@ def sample_text(units, budget=14000):
     return "\n".join(head) + "\n[...]\n" + "\n".join(mid) + "\n[...]\n" + "\n".join(tail)
 
 
-def build_context(units, src, tgt, style=""):
+def build_context(units, src, tgt, style="", stop=None):
     """Returns the context card as pretty JSON text (the user can edit it before translation)."""
     sample = sample_text(units)
     sysmsg = (f"You are a literary editor preparing a translation bible for a novel being translated into "
@@ -55,8 +55,10 @@ def build_context(units, src, tgt, style=""):
     user = (f"Client style request: {style or 'none'}\n\nEXCERPTS:\n{sample}")
     try:
         text = call([{"role": "system", "content": sysmsg}, {"role": "user", "content": user}],
-                    role="edit", max_tokens=3000, temperature=0.2, task="context")
+                    role="edit", max_tokens=3000, temperature=0.2, task="context", stop=stop)
         data = extract_json(text) or {}
-    except Exception:
+    except Exception as e:
+        if type(e).__name__ in ("Stopped", "NoKeys"):
+            raise
         data = {}
     return json.dumps(data, ensure_ascii=False, indent=1) if data else ""

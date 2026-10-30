@@ -102,7 +102,8 @@ def translate_all(units, src, tgt, ctx, style, golden, on_progress=None, should_
     total, done, fatal = len(chunks), 0, None
     by_id = {u["id"]: u for u in units}
     workers = max(1, min(get_settings()["max_workers"], len([k for k in load_keys() if k.get("enabled")]) * 3 or 1))
-    with cf.ThreadPoolExecutor(workers) as ex:
+    ex = cf.ThreadPoolExecutor(workers)
+    try:
         futs = {ex.submit(_translate_chunk, c, sysmsg, should_stop): c for c in chunks}
         for f in cf.as_completed(futs):
             if should_stop():
@@ -132,6 +133,8 @@ def translate_all(units, src, tgt, ctx, style, golden, on_progress=None, should_
             done += 1
             if on_progress:
                 on_progress(n_new, done, total)
+    finally:
+        ex.shutdown(wait=False, cancel_futures=True)
     if fatal:
         raise NoKeys(fatal)
     return sum(1 for u in units if u.get("translate") and not u.get("tr"))
