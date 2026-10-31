@@ -20,8 +20,13 @@ def kname(k):
     return k.get("label") or PROVIDER_LABELS.get(k["provider"], k["provider"])
 
 
+def ltr(x):
+    """Keeps a number or time reading left-to-right inside Arabic text (so units never stick together)."""
+    return f"\u2066{x}\u2069"
+
+
 def clock(ts):
-    return time.strftime("%H:%M:%S", time.localtime(ts))
+    return ltr(time.strftime("%H:%M:%S", time.localtime(ts)))
 
 
 def human(sec):
@@ -30,12 +35,12 @@ def human(sec):
     m, s = divmod(r, 60)
     parts = []
     if h:
-        parts.append(f"{h} ساعة")
+        parts.append(f"{ltr(h)} ساعة")
     if m:
-        parts.append(f"{m} دقيقة")
+        parts.append(f"{ltr(m)} دقيقة")
     if s and not h:
-        parts.append(f"{s} ثانية")
-    return " و ".join(parts) or "لحظات"
+        parts.append(f"{ltr(s)} ثانية")
+    return " · ".join(parts) or "لحظات"
 
 
 class KeyPool:
@@ -45,13 +50,20 @@ class KeyPool:
         self.glob_next = 0.0
         self.events = deque(maxlen=300)
         self.waiting_until = 0.0
+        self.quarantine = set()          # keys taken out of translation because their output kept failing the checks
+        self.qstats = {}                 # key id -> [paragraphs checked, paragraphs with problems]
+
+    def reset_quality(self):
+        self.quarantine.clear()
+        self.qstats.clear()
 
     def log(self, msg, level="info"):
         self.events.append((time.time(), level, msg))
 
     def _rt(self, kid):
         return self.rt.setdefault(kid, {"next_ok": 0.0, "cool": 0.0, "reason": "", "dead": "", "verified": None,
-                                        "ok": 0, "busy": 0, "task": "", "tin": 0, "tout": 0, "err": "", "detail": ""})
+                                        "ok": 0, "busy": 0, "task": "", "tin": 0, "tout": 0, "err": "", "detail": "",
+                                        "hist": deque(), "rl": {}, "rl_time": 0.0})
 
     def _alive(self, k, role):
         r = self._rt(k["id"])
@@ -59,11 +71,13 @@ class KeyPool:
             return False
         if k.get("role", "both") not in ("both", role):
             return False
+        if role == "translate" and k["id"] in self.quarantine:
+            return False
         if k.get("paid") and get_settings()["spent_usd"] >= get_settings()["budget_usd"]:
             return False
         return True
 
-    def acquire(self, role="translate", stop=None):
+    def acquire(self, role="translate", stop=None, avoid=None):
         while True:
             if stop and stop():
                 raise Stopped()
@@ -77,6 +91,8 @@ class KeyPool:
                     raise NoKeys("ما فيه أي مفتاح صالح (كلها مرفوضة أو متوقفة أو نفد رصيدها)."
                                  + (f" الأسباب: {why}" if why else " أضف مفتاحاً أو اختبر المفاتيح."))
                 ready = [k for k in alive if self._rt(k["id"])["cool"] <= now]
+                if ready and avoid:                      # prefer a different key than the ones that just failed the checks
+                    ready = [k for k in ready if k["id"] not in avoid] or ready
                 if ready:
                     free = [k for k in ready if not k.get("paid") and self._rt(k["id"])["next_ok"] <= now + 3]
                     k = min(free or ready, key=lambda x: self._rt(x["id"])["next_ok"])
@@ -110,6 +126,8 @@ class KeyPool:
 
     def kill(self, k, why):
         r = self._rt(k["id"])
+        if why[:3] in ("401", "403"):
+            why += " — غالباً المفتاح منسوخ ناقص أو هو لخدمة ثانية غير هذا العنوان. احذفه وأضفه بعنوان خدمته الصحيح."
         r["dead"], r["verified"] = why, False
         self.log(f"❌ {kname(k)} مرفوض ولن يُستخدم: {why[:90]}", "error")
 
@@ -123,6 +141,12 @@ class KeyPool:
     def record(self, k, usage):
         r = self._rt(k["id"])
         r["ok"] += 1
+        now = time.time()
+        r["hist"].append((now, usage["in"] + usage["out"]))
+        while r["hist"] and r["hist"][0][0] < now - 86400:
+            r["hist"].popleft()
+        if usage.get("rl"):
+            r["rl"], r["rl_time"] = usage["rl"], now
         r["tin"] += usage["in"]
         r["tout"] += usage["out"]
         r["dead"] = ""
@@ -137,6 +161,9 @@ class KeyPool:
             r = self._rt(k["id"])
             if not k.get("enabled"):
                 st, css = "متوقف يدوياً", "off"
+            elif k["id"] in self.quarantine:
+                n, bad = self.qstats.get(k["id"], [0, 0])
+                st, css = f"أُوقف تلقائياً عن الترجمة: {bad} من {n} فقرة فيها أخطاء ظاهرة (كلمات أجنبية أو رموز أو نقص)", "wait"
             elif r["dead"]:
                 st, css = "مرفوض: " + r["dead"][:70], "bad"
             elif r["cool"] > now:
@@ -156,19 +183,33 @@ class KeyPool:
         return out
 
 
+    def limits(self, k):
+        """What we know about the remaining allowance of a key: the service's own headers + our own counters."""
+        r = self._rt(k["id"])
+        now = time.time()
+        while r["hist"] and r["hist"][0][0] < now - 86400:
+            r["hist"].popleft()
+        return {"rl": r.get("rl") or {}, "rl_age": now - r.get("rl_time", 0) if r.get("rl_time") else None,
+                "min_req": sum(1 for t, _ in r["hist"] if t > now - 60), "day_req": len(r["hist"]),
+                "day_tok": sum(x for _, x in r["hist"])}
+
+
 POOL = KeyPool()
 
 
-def call(messages, role="translate", max_tokens=4096, temperature=0.3, task="translate", tries=6, stop=None):
+def call(messages, role="translate", max_tokens=4096, temperature=0.3, task="translate", tries=6, stop=None,
+         avoid=None, meta=None):
     errs, last = 0, None
     while errs < tries:
-        k = POOL.acquire(role, stop)
+        k = POOL.acquire(role, stop, avoid)
         r = POOL._rt(k["id"])
         r["busy"] += 1
         r["task"] = task
         try:
             text, usage = llm.chat(k, messages, max_tokens, temperature, task)
             POOL.record(k, usage)
+            if meta is not None:
+                meta.update(key_id=k["id"], name=kname(k), model=k.get("model", ""))
             return text
         except llm.RateLimited as e:          # rate limits never count as failures: wait and switch key
             POOL.cooldown(k, e.retry_after, e.reason, e.detail)

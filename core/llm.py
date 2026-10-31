@@ -92,7 +92,10 @@ def _mock(key, messages, task):
         for line in user.splitlines():
             m = re.match(r"^\s*\[(P_\d+)\]\s*(.*)$", line)
             if m:
-                out.append(f"[{m.group(1)}] «ترجمة تجريبية: {m.group(2)}»")
+                body = "ترجمة تجريبية " * max(1, len(m.group(2)) // 14)
+                if key["key"].startswith("mock-bad"):
+                    body += " mage 細胞"
+                out.append(f"[{m.group(1)}] «{body.strip()}»")
         return "\n".join(out)
     if task == "context":
         return json.dumps({"title": "Test", "tone": "neutral", "characters": [
@@ -103,7 +106,10 @@ def _mock(key, messages, task):
 def chat(key, messages, max_tokens=4096, temperature=0.3, task="translate", timeout=180):
     prov = PROVIDERS[key["provider"]]
     if key["provider"] == "mock":
-        return _mock(key, messages, task), {"in": 10, "out": 10}
+        return _mock(key, messages, task), {"in": 10, "out": 10, "rl": {
+            "x-ratelimit-remaining-requests-day": "900", "x-ratelimit-limit-requests-day": "1000",
+            "x-ratelimit-reset-requests-day": "3600", "x-ratelimit-remaining-tokens-minute": "5000",
+            "x-ratelimit-limit-tokens-minute": "6000", "x-ratelimit-reset-tokens-minute": "12.5"}}
     base = (key.get("base") or prov["base"]).rstrip("/")
     if not base:
         raise BadRequest("لم تحدد عنوان الخادم")
@@ -132,10 +138,21 @@ def chat(key, messages, max_tokens=4096, temperature=0.3, task="translate", time
         raise BadRequest("truncated output")
     text = (ch.get("message") or {}).get("content") or ""
     u = data.get("usage") or {}
-    return text, {"in": u.get("prompt_tokens", 0), "out": u.get("completion_tokens", 0)}
+    rl = {h.lower(): v for h, v in r.headers.items() if h.lower().startswith("x-ratelimit")}
+    return text, {"in": u.get("prompt_tokens", 0), "out": u.get("completion_tokens", 0), "rl": rl}
 
 
-_SKIP = ("embed", "whisper", "tts", "audio", "guard", "moderation", "rerank", "imagen", "veo", "dall-e", "transcribe")
+_SKIP_TOKENS = {"image", "images", "imagen", "tts", "orpheus", "live", "embedding", "embeddings", "embed", "learnlm",
+                "aqa", "robotics", "audio", "whisper", "guard", "moderation", "rerank", "veo", "dall", "transcribe",
+                "speech", "playai", "safeguard", "sora", "vision", "ocr", "diffusion", "flux", "sdxl"}
+_SKIP_SUB = ("embed", "whisper", "moderation", "guard", "text-to-speech", "native-audio", "computer-use", "deep-research")
+
+
+def is_chat_model(model_id):
+    m = model_id.lower()
+    if any(x in m for x in _SKIP_SUB):
+        return False
+    return not (set(re.split(r"[-/_.:\s]+", m)) & _SKIP_TOKENS)
 
 
 def list_models(provider, key="", base=""):
@@ -161,4 +178,4 @@ def list_models(provider, key="", base=""):
         i = (it.get("id") or it.get("name")) if isinstance(it, dict) else str(it)
         if i:
             ids.append(i.replace("models/", ""))
-    return sorted(i for i in dict.fromkeys(ids) if not any(w in i.lower() for w in _SKIP))
+    return sorted(i for i in dict.fromkeys(ids) if is_chat_model(i))

@@ -1,6 +1,6 @@
 import html, os, shutil
 import gradio as gr
-from core import auth, jobs, editor, builder, llm, modelpick, monitor
+from core import auth, jobs, editor, builder, llm, modelpick, monitor, quality
 from core.config import JOBS, get_settings, update_settings
 from core.keystore import (ADDRESS_CHOICES, PROVIDERS, PROVIDER_LABELS, add_key_generic, detect_base, delete_key, detect_provider,
                            load_keys, mask, provider_from_base, update_key)
@@ -156,18 +156,20 @@ def on_key_change(key, addr):
     return gr.update()
 
 
-def add_key_ui(name, key, addr, model, role, paid, pin, pout, rpm):
+def add_key_ui(name, key, addr, model, role, paid, pin, pout, rpm, dreq, dtok):
     guard()
     addr, key = (addr or "").strip(), (key or "").strip()
     if not addr:
         raise gr.Error("اختر الخدمة من القائمة، أو الصق عنوانها")
     if not addr.startswith("http"):
         raise gr.Error("العنوان لازم يبدأ بـ http أو https")
+    if "رقم_الحساب" in addr:
+        raise gr.Error("بدّل «رقم_الحساب» في العنوان برقم حسابك الحقيقي (تلقاه في لوحة Cloudflare)")
     warn = ""
     det = detect_base(key)
     if det and det.rstrip("/") != addr.rstrip("/"):
         warn = "\n\n⚠ شكل المفتاح يدل على خدمة ثانية غير العنوان اللي اخترته. لو فشل الاختبار فهذا غالباً السبب."
-    entry = add_key_generic(name, key, addr, (model or "").strip(), role, paid, pin, pout, rpm)
+    entry = add_key_generic(name, key, addr, (model or "").strip(), role, paid, pin, pout, rpm, dreq, dtok)
     if (model or "").strip():
         ok, msg = test_key(entry)
     else:
@@ -191,7 +193,7 @@ def key_action(kid, what, newval=""):
         else:
             delete_key(kid)
             msg = "🗑 حُذف المفتاح."
-    elif what in ("toggle", "rename", "model") and k and k.get("env"):
+    elif what in ("toggle", "rename", "model", "role") and k and k.get("env"):
         msg = "هذا المفتاح قادم من إعدادات الاستضافة، عدّله من هناك."
     elif what == "toggle" and k:
         update_key(kid, enabled=not k.get("enabled"))
@@ -204,6 +206,11 @@ def key_action(kid, what, newval=""):
             raise gr.Error("اكتب الاسم الجديد")
         update_key(kid, label=newval.strip())
         msg = f"✏ صار الاسم «{newval.strip()}»."
+    elif what == "role" and k:
+        if newval not in ("both", "translate", "edit"):
+            raise gr.Error("اختر الاستخدام الجديد من القائمة")
+        update_key(kid, role=newval)
+        msg = "✔ صار استخدام «" + kname(k) + "»: " + monitor.ROLE_AR[newval] + "."
     elif what == "auto" and k:
         ok, msg = auto_model(k)
     elif what == "model" and k:
@@ -267,13 +274,17 @@ def tick(jid):
 
 
 # ------------------------------------------------------------------ review
-def load_review(jid):
+def load_review(jid, only_flagged=False):
     guard()
     if not jid:
         raise gr.Error("اختر ملفاً")
     meta, units = jobs.load(jid)
-    rows = [[u["id"], u["page"] + 1, u["text"], u.get("tr", "")] for u in units if u.get("translate")]
-    return rows, meta.get("ctx", ""), f"تم تحميل **{len(rows)}** فقرة. الحالة: {meta.get('stage')}"
+    us = [u for u in units if u.get("translate")]
+    if only_flagged:
+        us = [u for u in us if u.get("flag") or not u.get("tr")]
+    rows = [[u["id"], u["page"] + 1, u["text"], u.get("tr", ""), u.get("flag") or ("بدون ترجمة" if not u.get("tr") else "")] for u in us]
+    note = " (المشبوهة فقط)" if only_flagged else ""
+    return rows, meta.get("ctx", ""), f"تم تحميل **{len(rows)}** فقرة{note}. الحالة: {meta.get('stage')}", monitor.quality_html(jid)
 
 
 def save_review(jid, rows, ctx):
@@ -285,6 +296,11 @@ def save_review(jid, rows, ctx):
         u = by.get(r[0])
         if u and (r[3] or "") != u.get("tr", ""):
             u["tr"] = r[3] or ""
+            fl = quality.check(u["text"], u["tr"], meta["tgt"])
+            if fl:
+                u["flag"] = "؛ ".join(fl)
+            else:
+                u.pop("flag", None)
             n += 1
     jobs.save_units(jid, units)
     jobs.set_state(jid, ctx=ctx)
@@ -300,7 +316,7 @@ def run_chat(jid, instruction, rows):
     patches = editor.run_instruction(units, instruction, meta["src"], meta["tgt"], meta["ctx"], meta["style"])
     jobs.save_units(jid, units)
     log = "\n".join(f"- {p['id']}: {p['why']}" for p in patches[:40]) or "ما احتاج أي فقرة تعديل"
-    new_rows, _, _ = load_review(jid)
+    new_rows, _, _, _ = load_review(jid)
     return new_rows, f"✏ عُدّلت **{len(patches)}** فقرة\n\n{log}"
 
 
@@ -311,7 +327,7 @@ def do_replace(jid, find, repl):
     meta, units = jobs.load(jid)
     n = editor.find_replace(units, find, repl)
     jobs.save_units(jid, units)
-    rows, _, _ = load_review(jid)
+    rows, _, _, _ = load_review(jid)
     return rows, f"🔁 استُبدلت **{n}** مرة"
 
 
@@ -429,6 +445,12 @@ with gr.Blocks(title="مترجم الروايات") as demo:
                     "يمنع الوصول للحد بسرعة. ولو وصل الحد فعلاً، الموقع ينتظر ويحوّل لمفتاح ثاني.",
                     "اتركه 0 ليختار الموقع قيمة مناسبة، أو اكتب الرقم اللي تعرفه من حد خدمتك.")
                 k_rpm = gr.Number(0, show_label=False, precision=0)
+                opt("حدودك اليومية (اختياري)", "لو تعرف الحد اليومي لهذا المفتاح من صفحة الخدمة، اكتبه هنا.",
+                    "الموقع يحسب لك كم المتبقي منه اليوم. بدونه يعرض فقط ما تعلنه الخدمة (إن أعلنت) وعدّاد البرنامج.",
+                    "اكتب عدد الطلبات اليومية وعدد التوكنات اليومية، أو اتركهما 0 إن كنت ما تعرفهما.")
+                with gr.Row():
+                    k_dreq = gr.Number(0, label="الحد اليومي للطلبات", precision=0)
+                    k_dtok = gr.Number(0, label="الحد اليومي للتوكنات", precision=0)
                 opt("مفتاح مدفوع", "تعلّم الموقع إن هذا المفتاح يخصم من رصيدك.",
                     "الموقع يحسب الصرف ويوقف المدفوع عند السقف، ويستخدم المجاني أولاً. (الاختيار التلقائي للنموذج لا يعرف الأسعار.)",
                     "علّمه فقط لو مفتاحك مدفوع، واكتب الأسعار من صفحة أسعار الخدمة.")
@@ -457,6 +479,12 @@ with gr.Blocks(title="مترجم الروايات") as demo:
                 b_fetch2 = gr.Button("جلب نماذج هذا المفتاح", scale=1)
                 b_model = gr.Button("تغيير النموذج", scale=1)
             b_auto = gr.Button("اختيار النموذج تلقائياً لهذا المفتاح")
+            opt("تغيير وظيفة المفتاح", "تحويل المفتاح بين الترجمة والتدقيق في أي وقت.",
+                "تخصص المفاتيح الأقوى للتدقيق أو للترجمة حسب ما تحتاج، بدون حذف وإعادة إضافة.",
+                "اختر المفتاح من الأعلى، ثم اختر الوظيفة الجديدة واضغط الزر.")
+            with gr.Row():
+                k_newrole = gr.Dropdown(ROLE_CHOICES, value="both", show_label=False, scale=3)
+                b_role = gr.Button("تغيير الاستخدام", scale=1)
         # ============================================================ 2. TRANSLATE
         with gr.Tab("٢. الترجمة"):
             step("أ", "ارفع الملفات", "تقدر ترفع أكثر من ملف، وتترجم بالدور واحداً بعد واحد.")
@@ -513,9 +541,11 @@ with gr.Blocks(title="مترجم الروايات") as demo:
             step("ب", "راجع الترجمة وعدّلها")
             opt("جدول المراجعة", "يعرض كل فقرة: الأصل بجانب الترجمة.", "تصحح أي كلمة بيدك مباشرة.",
                 "اضغط على خلية الترجمة واكتب، ثم اضغط «حفظ التعديلات».")
-            grid = gr.Dataframe(headers=["المعرّف", "صفحة", "الأصل", "الترجمة (اضغط للتعديل)"], interactive=True,
-                                wrap=True, column_count=(4, "fixed"), datatype=["str", "number", "str", "str"],
-                                max_height=520, column_widths=["9%", "7%", "42%", "42%"])
+            qrep = gr.HTML(lambda: monitor.quality_html(None))
+            only_flag = gr.Checkbox(False, label="عرض الفقرات المشبوهة وغير المترجمة فقط (للإصلاح السريع)")
+            grid = gr.Dataframe(headers=["المعرّف", "صفحة", "الأصل", "الترجمة (اضغط للتعديل)", "ملاحظة البرنامج"], interactive=True,
+                                wrap=True, column_count=(5, "fixed"), datatype=["str", "number", "str", "str", "str"],
+                                max_height=520, column_widths=["8%", "6%", "34%", "34%", "18%"])
             b_save = gr.Button("حفظ التعديلات")
             with gr.Accordion("بطاقة السياق: أسماء الشخصيات والمصطلحات", open=False):
                 opt("بطاقة السياق", "قائمة أسماء الشخصيات وجنسها والمصطلحات ونبرة الرواية، يبنيها الموقع من النص.",
@@ -573,7 +603,7 @@ with gr.Blocks(title="مترجم الروايات") as demo:
     k_paid.change(lambda v: gr.update(visible=v), k_paid, price_row)
     b_fetch.click(fetch_models_ui, [k_addr, k_key], [k_model, kmsg])
     b_fetch2.click(fetch_models_for_key, ksel, [k_newmodel, kmsg])
-    b_addk.click(add_key_ui, [k_name, k_key, k_addr, k_model, k_role, k_paid, k_pin, k_pout, k_rpm],
+    b_addk.click(add_key_ui, [k_name, k_key, k_addr, k_model, k_role, k_paid, k_pin, k_pout, k_rpm, k_dreq, k_dtok],
                  [k_key, k_name, kpanel, ksel, kmsg])
     b_test.click(lambda k: key_action(k, "test"), ksel, [kpanel, ksel, kmsg])
     b_tog.click(lambda k: key_action(k, "toggle"), ksel, [kpanel, ksel, kmsg])
@@ -581,12 +611,14 @@ with gr.Blocks(title="مترجم الروايات") as demo:
     b_rename.click(lambda k, n: key_action(k, "rename", n), [ksel, k_newname], [kpanel, ksel, kmsg])
     b_model.click(lambda k, m: key_action(k, "model", m), [ksel, k_newmodel], [kpanel, ksel, kmsg])
     b_auto.click(lambda k: key_action(k, "auto"), ksel, [kpanel, ksel, kmsg])
+    b_role.click(lambda k, r: key_action(k, "role", r), [ksel, k_newrole], [kpanel, ksel, kmsg])
     b_testall.click(test_all, None, [kpanel, kmsg])
     go.click(add_jobs, [files, src, tgt, style, golden, sens], [gmsg, jsel])
     b_resume.click(lambda j: job_action(j, "resume"), jsel, [jsel, jmsg])
     b_stop.click(lambda j: job_action(j, "stop"), jsel, [jsel, jmsg])
     b_del.click(lambda j: job_action(j, "delete"), jsel, [jsel, jmsg])
-    b_load.click(load_review, rsel, [grid, ctx, rinfo])
+    b_load.click(load_review, [rsel, only_flag], [grid, ctx, rinfo, qrep])
+    only_flag.change(load_review, [rsel, only_flag], [grid, ctx, rinfo, qrep])
     b_save.click(save_review, [rsel, grid, ctx], rmsg)
     b_chat.click(run_chat, [rsel, chat, grid], [grid, rmsg])
     b_repl.click(do_replace, [rsel, f_find, f_repl], [grid, rmsg])

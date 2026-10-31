@@ -1,6 +1,7 @@
 """Surgical editor: reads source + translation, returns ONLY patches keyed by paragraph ID."""
 import concurrent.futures as cf
 from .config import LANGS, get_settings
+from . import quality
 from .glossary import extract_json
 from .keystore import load_keys
 from .pool import call
@@ -27,14 +28,16 @@ def _batches(units, max_chars):
 
 
 def _run_batch(batch, system, stop=None, max_tok=3000):
-    user = "\n\n".join(f"[{u['id']}]\nSOURCE: {u['text']}\nTRANSLATION: {u['tr']}" for u in batch)
+    user = "\n\n".join(f"[{u['id']}]\nSOURCE: {u['text']}\nTRANSLATION: {u['tr']}"
+                       + (f"\nAUTOMATIC CHECK FOUND: {u['flag']} (you MUST fix this paragraph)" if u.get("flag") else "")
+                       for u in batch)
     text = call([{"role": "system", "content": system}, {"role": "user", "content": user}],
                 role="edit", max_tokens=max_tok, temperature=0.2, task="edit", stop=stop)
     data = extract_json(text, "[") or []
     return data if isinstance(data, list) else []
 
 
-def _apply(units_by_id, patches, batch_ids):
+def _apply(units_by_id, patches, batch_ids, tgt="ar"):
     applied = []
     for p in patches:
         if not isinstance(p, dict):
@@ -48,6 +51,11 @@ def _apply(units_by_id, patches, batch_ids):
             continue
         applied.append({"id": uid, "old": u["tr"], "new": fix, "why": p.get("why", "")})
         u["tr"] = fix
+        fl = quality.check(u["text"], fix, tgt)
+        if fl:
+            u["flag"] = "؛ ".join(fl)
+        else:
+            u.pop("flag", None)
     return applied
 
 
@@ -75,7 +83,7 @@ def edit_pass(units, src, tgt, ctx, style, sensitivity="medium", on_progress=Non
                 break
             b = futs[f]
             try:
-                applied += _apply(by_id, f.result(), {u["id"] for u in b})
+                applied += _apply(by_id, f.result(), {u["id"] for u in b}, tgt)
             except Exception:
                 pass
             done += 1
@@ -100,7 +108,7 @@ def run_instruction(units, instruction, src, tgt, ctx, style, on_progress=None):
         for n, f in enumerate(cf.as_completed(futs), 1):
             b = futs[f]
             try:
-                applied += _apply(by_id, f.result(), {u["id"] for u in b})
+                applied += _apply(by_id, f.result(), {u["id"] for u in b}, tgt)
             except Exception:
                 pass
             if on_progress:

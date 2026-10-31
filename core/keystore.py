@@ -29,7 +29,8 @@ PRESETS = {
     "xAI": "https://api.x.ai/v1", "Together AI": "https://api.together.xyz/v1",
     "Fireworks AI": "https://api.fireworks.ai/inference/v1", "SambaNova": "https://api.sambanova.ai/v1",
     "NVIDIA NIM": "https://integrate.api.nvidia.com/v1", "Hyperbolic": "https://api.hyperbolic.xyz/v1",
-    "Hugging Face": "https://router.huggingface.co/v1", "LM Studio (محلي)": "http://localhost:1234/v1",
+    "Hugging Face": "https://router.huggingface.co/v1",
+    "Cloudflare Workers AI (بدّل رقم_الحساب)": "https://api.cloudflare.com/client/v4/accounts/رقم_الحساب/ai/v1", "LM Studio (محلي)": "http://localhost:1234/v1",
 }
 UI_PROVIDERS = [(v["label"], k) for k, v in PROVIDERS.items() if k != "mock"]
 
@@ -84,12 +85,12 @@ def save_keys(keys):
     write_json(KEYS_FILE, [k for k in keys if not str(k.get("id", "")).startswith("env-")])
 
 
-def add_key(provider, key, model="", role="both", paid=False, price_in=0.0, price_out=0.0, rpm=0, base="", label=""):
+def add_key(provider, key, model="", role="both", paid=False, price_in=0.0, price_out=0.0, rpm=0, base="", label="", daily_requests=0, daily_tokens=0):
     p = PROVIDERS[provider]
     entry = {
         "id": uuid.uuid4().hex[:8], "provider": provider, "key": (key or "").strip(),
         "model": (model or p["model"]).strip(), "role": role, "enabled": True, "base": (base or "").strip(),
-        "label": (label or "").strip(),
+        "label": (label or "").strip(), "daily_requests": int(daily_requests or 0), "daily_tokens": int(daily_tokens or 0),
         "paid": bool(paid), "price_in": float(price_in or 0), "price_out": float(price_out or 0),
         "rpm": int(rpm or p["rpm"]), "tokens_in": 0, "tokens_out": 0, "added": int(time.time()),
     }
@@ -133,11 +134,12 @@ def mask(key: str) -> str:
     return key[:4] + "…" + key[-3:] if len(key) > 9 else "…"
 
 
-def add_key_generic(name, key, base, model, role="both", paid=False, price_in=0.0, price_out=0.0, rpm=0):
+def add_key_generic(name, key, base, model, role="both", paid=False, price_in=0.0, price_out=0.0, rpm=0,
+                    daily_requests=0, daily_tokens=0):
     """Any OpenAI-style service: you choose the name, the address, the key and the model."""
     from urllib.parse import urlparse
     base = (base or "").strip().rstrip("/")
     prov = provider_from_base(base)
     name = (name or "").strip() or urlparse(base).netloc or "مفتاح"
     return add_key(prov, key, model, role, paid, price_in, price_out, rpm or (20 if prov == "custom" else 0),
-                   base if prov in ("custom", "ollama") else "", name)
+                   base if prov in ("custom", "ollama") else "", name, daily_requests, daily_tokens)
