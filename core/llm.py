@@ -103,3 +103,32 @@ def chat(key, messages, max_tokens=4096, temperature=0.3, task="translate", time
     text = (ch.get("message") or {}).get("content") or ""
     u = data.get("usage") or {}
     return text, {"in": u.get("prompt_tokens", 0), "out": u.get("completion_tokens", 0)}
+
+
+_SKIP = ("embed", "whisper", "tts", "audio", "guard", "moderation", "rerank", "imagen", "veo", "dall-e", "transcribe")
+
+
+def list_models(provider, key="", base=""):
+    """Asks the company which models it offers (OpenAI-style /models). Returns a sorted list of ids."""
+    if provider == "mock":
+        return ["mock"]
+    b = (base or PROVIDERS[provider]["base"]).rstrip("/")
+    if not b:
+        raise BadRequest("حدد عنوان الخادم أولاً")
+    headers = {"Authorization": f"Bearer {key}"} if key else {}
+    try:
+        r = httpx.get(b + "/models", headers=headers, timeout=30)
+    except (httpx.TimeoutException, httpx.TransportError) as e:
+        raise Transient(f"تعذر الاتصال: {e}")
+    if r.status_code in (401, 403):
+        raise KeyDead(f"{r.status_code}: {r.text[:120]}")
+    if r.status_code >= 400:
+        raise BadRequest(f"{r.status_code}: {r.text[:200]}")
+    data = r.json()
+    items = data.get("data") or data.get("models") or [] if isinstance(data, dict) else data
+    ids = []
+    for it in items:
+        i = (it.get("id") or it.get("name")) if isinstance(it, dict) else str(it)
+        if i:
+            ids.append(i.replace("models/", ""))
+    return sorted(i for i in dict.fromkeys(ids) if not any(w in i.lower() for w in _SKIP))

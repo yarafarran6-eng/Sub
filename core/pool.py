@@ -17,7 +17,7 @@ class Stopped(Exception):
 
 
 def kname(k):
-    return f"{PROVIDER_LABELS.get(k['provider'], k['provider'])} · {k.get('model', '')}"
+    return f"{k.get('label') or PROVIDER_LABELS.get(k['provider'], k['provider'])} · {k.get('model', '')}"
 
 
 def clock(ts):
@@ -51,7 +51,7 @@ class KeyPool:
 
     def _rt(self, kid):
         return self.rt.setdefault(kid, {"next_ok": 0.0, "cool": 0.0, "reason": "", "dead": "", "verified": None,
-                                        "ok": 0, "busy": 0, "task": "", "tin": 0, "tout": 0})
+                                        "ok": 0, "busy": 0, "task": "", "tin": 0, "tout": 0, "err": ""})
 
     def _alive(self, k, role):
         r = self._rt(k["id"])
@@ -109,8 +109,9 @@ class KeyPool:
     def revive(self, kid):
         self.rt.pop(kid, None)
 
-    def mark_verified(self, kid, ok):
-        self._rt(kid)["verified"] = ok
+    def mark_verified(self, kid, ok, err=""):
+        r = self._rt(kid)
+        r["verified"], r["err"] = ok, ("" if ok else err)
 
     def record(self, k, usage):
         r = self._rt(k["id"])
@@ -137,7 +138,7 @@ class KeyPool:
             elif r["busy"] > 0:
                 st, css = f"يعمل الآن: {TASK_AR.get(r['task'], r['task'])} ({r['busy']} طلب)", "busy"
             elif r["verified"] is False:
-                st, css = "فشل الاختبار", "bad"
+                st, css = "فشل الاختبار" + (f": {r['err'][:100]}" if r.get("err") else ""), "bad"
             elif r["verified"] or r["ok"]:
                 st, css = "جاهز ✓", "ok"
             else:

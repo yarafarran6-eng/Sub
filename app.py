@@ -2,9 +2,9 @@ import html, os, shutil
 import gradio as gr
 from core import auth, jobs, editor, builder, llm, monitor
 from core.config import JOBS, get_settings, update_settings
-from core.keystore import (PROVIDERS, PROVIDER_LABELS, UI_PROVIDERS, add_key, delete_key, detect_provider,
+from core.keystore import (PRESETS, PROVIDERS, PROVIDER_LABELS, UI_PROVIDERS, add_key, delete_key, detect_provider,
                            load_keys, mask, update_key)
-from core.pool import POOL
+from core.pool import POOL, kname
 
 E = html.escape
 LANG_CHOICES = [("العربية", "ar"), ("English", "en"), ("日本語", "ja")]
@@ -50,18 +50,27 @@ def banner_html():
 
 # ------------------------------------------------------------------ keys
 def key_choices():
-    return [(f"{PROVIDER_LABELS.get(k['provider'])} · {mask(k['key'])} [{k['id']}]", k["id"]) for k in load_keys()]
+    return [(f"{kname(k)} · {mask(k['key'])} [{k['id']}]", k["id"]) for k in load_keys()]
+
+
+def _suggest(k):
+    try:
+        ids = llm.list_models(k["provider"], k.get("key", ""), k.get("base", ""))
+    except Exception:
+        return ""
+    return ("\n\nالنماذج المتاحة عند الشركة: " + "، ".join(ids[:14]) + (" ..." if len(ids) > 14 else "")
+            + "\n\nاختر واحداً منها من «تغيير النموذج».") if ids else ""
 
 
 def test_key(k):
     """Returns (ok, friendly message) and updates the pool state."""
-    label = PROVIDER_LABELS.get(k["provider"], k["provider"])
+    label = k.get("label") or PROVIDER_LABELS.get(k["provider"], k["provider"])
     try:
         llm.chat(k, [{"role": "user", "content": "Reply with the single word OK"}], 20, 0, "ping", 60)
         POOL.revive(k["id"])
         POOL.mark_verified(k["id"], True)
         return True, f"✅ المفتاح شغّال ({label})"
-    except llm.RateLimited as e:
+    except llm.RateLimited:
         POOL.revive(k["id"])
         POOL.mark_verified(k["id"], True)
         return True, "⚠ المفتاح صحيح لكنه وصل حد الاستخدام الآن، وسيعمل لاحقاً"
@@ -70,13 +79,38 @@ def test_key(k):
         return False, (f"❌ المفتاح مرفوض من {label}. غالباً نسخته ناقص، أو هو لشركة ثانية غير المختارة. "
                        f"تفاصيل: {str(e)[:120]}")
     except llm.BadRequest as e:
-        POOL.mark_verified(k["id"], False)
-        if str(e).startswith("404"):
-            return False, "❌ اسم النموذج غير موجود عند هذه الشركة. غيّره من خانة «تغيير النموذج»."
-        return False, f"❌ الشركة رفضت الطلب: {str(e)[:160]}"
+        if str(e).startswith("404") or "model" in str(e).lower():
+            POOL.mark_verified(k["id"], False, f"اسم النموذج «{k['model']}» غير موجود عندهم")
+            return False, f"❌ اسم النموذج «{k['model']}» غير موجود عند {label}." + _suggest(k)
+        POOL.mark_verified(k["id"], False, str(e)[:100])
+        return False, f"❌ الشركة رفضت الطلب: {str(e)[:200]}"
     except llm.Transient as e:
-        POOL.mark_verified(k["id"], False)
-        return False, f"❌ ما قدر يتصل: تأكد من الإنترنت" + (" ومن تشغيل برنامج Ollama" if k["provider"] == "ollama" else "") + f" ({str(e)[:80]})"
+        POOL.mark_verified(k["id"], False, "تعذر الاتصال")
+        return False, "❌ ما قدر يتصل: تأكد من الإنترنت" + (" ومن تشغيل البرنامج المحلي" if k["provider"] in ("ollama", "custom") else "") + f" ({str(e)[:80]})"
+
+
+def fetch_models(provider, key, base):
+    """Fills the model list with what the company really offers."""
+    try:
+        ids = llm.list_models(provider, (key or "").strip(), base if provider in ("ollama", "custom") else "")
+    except llm.KeyDead:
+        return gr.update(), "❌ المفتاح مرفوض، تأكد منه ومن الشركة المختارة."
+    except Exception as e:
+        return gr.update(), f"❌ تعذر جلب القائمة: {str(e)[:150]}"
+    if not ids:
+        return gr.update(), "ما رجعت الشركة أي نموذج. اكتب اسم النموذج بيدك."
+    return gr.update(choices=ids, value=None), f"✅ وجدت {len(ids)} نموذج. اختر واحداً من خانة النموذج."
+
+
+def fetch_models_for_key(kid):
+    k = next((x for x in load_keys() if x["id"] == kid), None)
+    if not k:
+        raise gr.Error("اختر مفتاحاً من القائمة")
+    return fetch_models(k["provider"], k.get("key", ""), k.get("base", ""))
+
+
+def on_preset(name):
+    return gr.update(value=PRESETS.get(name, "")), gr.update(value=name or "")
 
 
 def on_key_change(key, current):
@@ -87,24 +121,26 @@ def on_key_change(key, current):
 
 
 def on_prov_change(p):
-    need_base = p in ("ollama", "custom")
-    return (gr.update(visible=need_base), gr.update(value=PROVIDERS[p]["model"]),
-            gr.update(value=PROVIDERS[p]["base"]), gr.update(visible=not need_base or p == "custom"))
+    d = PROVIDERS[p]["model"]
+    return (gr.update(visible=p in ("ollama", "custom")), gr.update(visible=p == "custom"),
+            gr.update(value=d or None, choices=[d] if d else []), gr.update(value=PROVIDERS[p]["base"]))
 
 
-def add_key_ui(provider, key, model, role, paid, pin, pout, base):
+def add_key_ui(provider, key, model, role, paid, pin, pout, base, label):
     guard()
     prov = PROVIDERS[provider]
     key = (key or "").strip()
     if prov["need_key"] and not key:
         raise gr.Error("الصق المفتاح")
-    if provider == "custom" and not (base and model):
-        raise gr.Error("الخادم الآخر يحتاج عنوان الخادم واسم النموذج")
+    if not (model or "").strip():
+        raise gr.Error("اختر النموذج أو اكتب اسمه (تقدر تضغط «جلب النماذج المتاحة»)")
+    if provider == "custom" and not base:
+        raise gr.Error("الخادم الآخر يحتاج عنوان الخادم")
     det = detect_provider(key)
     warn = ""
     if det and det != provider:
         warn = f"\n\n⚠ المفتاح يبدو لشركة «{PROVIDER_LABELS[det]}» بينما اخترت «{PROVIDER_LABELS[provider]}»."
-    entry = add_key(provider, key, model, role, paid, pin, pout, 0, base if provider in ("ollama", "custom") else "")
+    entry = add_key(provider, key, model, role, paid, pin, pout, 0, base if provider in ("ollama", "custom") else "", label if provider == "custom" else "")
     ok, msg = test_key(entry)
     return "", key_panel(), gr.update(choices=key_choices()), msg + warn
 
@@ -150,7 +186,7 @@ def test_all():
     for k in load_keys():
         if k.get("enabled"):
             ok, m = test_key(k)
-            out.append(f"- {PROVIDER_LABELS.get(k['provider'])} · {mask(k['key'])}: {m}")
+            out.append(f"- {kname(k)} · {mask(k['key'])}: {m}")
     return key_panel(), "\n".join(out) or "ما فيه مفاتيح"
 
 
@@ -341,6 +377,12 @@ with gr.Blocks(title="مترجم الروايات") as demo:
                 "الموقع يعرف وين يرسل الطلبات.",
                 "لو اختار شركة غلط أو ما عرف مفتاحك، اخترها بيدك. مفتاح Google AI Studio يظهر باسم «Google AI Studio (Gemini)».")
             k_prov = gr.Dropdown(UI_PROVIDERS, value="gemini", show_label=False)
+            with gr.Group(visible=False) as k_custom_row:
+                opt("شركة أخرى", "أي شركة تدعم الطريقة المعيارية (متوافقة مع OpenAI): DeepSeek وTogether وغيرهم.",
+                    "ما أنت محدود بالشركات الظاهرة في القائمة.",
+                    "اختر قالباً جاهزاً أو اكتب عنوان الشركة بيدك من صفحة وثائقها، واكتب اسماً للعرض.")
+                k_preset = gr.Dropdown(list(PRESETS), value=None, show_label=False, info="قالب جاهز (اختياري)")
+                k_label = gr.Textbox(show_label=False, placeholder="اسم الشركة للعرض، مثل DeepSeek")
             with gr.Group(visible=False) as k_base_row:
                 opt("عنوان الخادم", "الرابط اللي يشتغل عليه النموذج، مثل برنامج Ollama على جهازك.",
                     "يخليك تستخدم نماذج محلية بدون مفتاح وبخصوصية كاملة.",
@@ -348,8 +390,10 @@ with gr.Blocks(title="مترجم الروايات") as demo:
                 k_base = gr.Textbox(show_label=False, value=PROVIDERS["ollama"]["base"], elem_classes="ltr")
             opt("النموذج", "اسم «العقل» الذي سيترجم عند هذه الشركة.",
                 "النموذج الأقوى يعطي ترجمة أحسن، لكن حدوده أقل.",
-                "اتركه كما هو. إذا فشل الاختبار بسبب الاسم، انسخ اسماً صحيحاً من موقع الشركة. مع Ollama اكتب اسم نموذج نزّلته.")
-            k_model = gr.Textbox(show_label=False, value=PROVIDERS["gemini"]["model"], elem_classes="ltr")
+                "الأسماء الجاهزة مجرد اقتراح وقد تتغير عند الشركة. الصق المفتاح ثم اضغط «جلب النماذج المتاحة» وسيعرض لك الأسماء الصحيحة الحالية. وتقدر تكتب أي اسم بيدك.")
+            k_model = gr.Dropdown([PROVIDERS["gemini"]["model"]], value=PROVIDERS["gemini"]["model"],
+                                  allow_custom_value=True, show_label=False, elem_classes="ltr")
+            b_fetch = gr.Button("جلب النماذج المتاحة من الشركة")
             opt("الاستخدام", "يحدد هل المفتاح يشارك في الترجمة، أو في المراجعة، أو في الاثنين.",
                 "تقدر تخصص المفتاح الأقوى للتدقيق والبقية للترجمة.", "اتركه «ترجمة وتدقيق» لو ما عندك سبب ثاني.")
             k_role = gr.Dropdown(ROLE_CHOICES, value="both", show_label=False)
@@ -373,7 +417,9 @@ with gr.Blocks(title="مترجم الروايات") as demo:
                 b_delk = gr.Button("حذف")
                 b_testall = gr.Button("اختبار الكل")
             with gr.Row():
-                k_newmodel = gr.Textbox(show_label=False, placeholder="اسم النموذج الجديد", elem_classes="ltr", scale=3)
+                k_newmodel = gr.Dropdown([], value=None, allow_custom_value=True, show_label=False,
+                                         info="اسم النموذج الجديد (اكتبه أو اجلب القائمة)", elem_classes="ltr", scale=3)
+                b_fetch2 = gr.Button("جلب نماذج هذا المفتاح", scale=1)
                 b_model = gr.Button("تغيير النموذج", scale=1)
         # ============================================================ 2. TRANSLATE
         with gr.Tab("٢. الترجمة"):
@@ -488,9 +534,12 @@ with gr.Blocks(title="مترجم الروايات") as demo:
     tab_review.select(lambda: gr.update(choices=job_choices()), None, rsel)
 
     k_key.change(on_key_change, [k_key, k_prov], [k_prov, k_model])
-    k_prov.change(on_prov_change, k_prov, [k_base_row, k_model, k_base, k_key])
+    k_prov.change(on_prov_change, k_prov, [k_base_row, k_custom_row, k_model, k_base])
+    k_preset.change(on_preset, k_preset, [k_base, k_label])
+    b_fetch.click(fetch_models, [k_prov, k_key, k_base], [k_model, kmsg])
+    b_fetch2.click(fetch_models_for_key, ksel, [k_newmodel, kmsg])
     k_paid.change(lambda v: gr.update(visible=v), k_paid, price_row)
-    b_addk.click(add_key_ui, [k_prov, k_key, k_model, k_role, k_paid, k_pin, k_pout, k_base], [k_key, kpanel, ksel, kmsg])
+    b_addk.click(add_key_ui, [k_prov, k_key, k_model, k_role, k_paid, k_pin, k_pout, k_base, k_label], [k_key, kpanel, ksel, kmsg])
     b_test.click(lambda k: key_action(k, "test"), ksel, [kpanel, ksel, kmsg])
     b_tog.click(lambda k: key_action(k, "toggle"), ksel, [kpanel, ksel, kmsg])
     b_delk.click(lambda k: key_action(k, "delete"), ksel, [kpanel, ksel, kmsg])

@@ -23,6 +23,14 @@ PROVIDERS = {
              "max_chars": 4000, "need_key": False},
 }
 PROVIDER_LABELS = {k: v["label"] for k, v in PROVIDERS.items()}
+# Ready-made addresses for companies that speak the OpenAI-style API. Check the address in the company's docs.
+PRESETS = {
+    "OpenAI": "https://api.openai.com/v1", "DeepSeek": "https://api.deepseek.com/v1",
+    "xAI": "https://api.x.ai/v1", "Together AI": "https://api.together.xyz/v1",
+    "Fireworks AI": "https://api.fireworks.ai/inference/v1", "SambaNova": "https://api.sambanova.ai/v1",
+    "NVIDIA NIM": "https://integrate.api.nvidia.com/v1", "Hyperbolic": "https://api.hyperbolic.xyz/v1",
+    "Hugging Face": "https://router.huggingface.co/v1", "LM Studio (محلي)": "http://localhost:1234/v1",
+}
 UI_PROVIDERS = [(v["label"], k) for k, v in PROVIDERS.items() if k != "mock"]
 
 
@@ -59,11 +67,12 @@ def save_keys(keys):
     write_json(KEYS_FILE, [k for k in keys if not str(k.get("id", "")).startswith("env-")])
 
 
-def add_key(provider, key, model="", role="both", paid=False, price_in=0.0, price_out=0.0, rpm=0, base=""):
+def add_key(provider, key, model="", role="both", paid=False, price_in=0.0, price_out=0.0, rpm=0, base="", label=""):
     p = PROVIDERS[provider]
     entry = {
         "id": uuid.uuid4().hex[:8], "provider": provider, "key": (key or "").strip(),
         "model": (model or p["model"]).strip(), "role": role, "enabled": True, "base": (base or "").strip(),
+        "label": (label or "").strip(),
         "paid": bool(paid), "price_in": float(price_in or 0), "price_out": float(price_out or 0),
         "rpm": int(rpm or p["rpm"]), "tokens_in": 0, "tokens_out": 0, "added": int(time.time()),
     }
