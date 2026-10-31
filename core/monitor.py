@@ -2,7 +2,8 @@
 import html, time
 from . import jobs
 from .pool import POOL, clock, human, kname
-from .keystore import load_keys
+from urllib.parse import urlparse
+from .keystore import load_keys, PROVIDERS
 
 STATUS_AR = {"queued": "في الطابور", "running": "يعمل", "ready": "جاهزة", "partial": "ناقصة",
              "stopped": "موقوفة", "error": "خطأ"}
@@ -61,7 +62,8 @@ def keys_html():
         k = s["k"]
         paid = " · مدفوع" if k.get("paid") else ""
         rows.append(
-            f"<tr><td><b>{esc(kname(k))}</b><div class='sub'>{esc(k['id'])} · {esc(k.get('role', 'both'))}{paid}</div></td>"
+            f"<tr><td><b>{esc(kname(k))}</b><div class='sub'>{esc(k.get('model', ''))} · "
+            f"{esc(urlparse(k.get('base') or PROVIDERS[k['provider']]['base']).netloc)} · {esc(k['id'])}{paid}</div></td>"
             f"<td><span class='chip k-{s['css']}'>{esc(s['state'])}</span></td>"
             f"<td>{s['ok']}</td><td>{s['tin']:,} / {s['tout']:,}</td></tr>")
     if not rows:

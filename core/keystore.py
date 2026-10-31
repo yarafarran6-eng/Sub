@@ -34,6 +34,23 @@ PRESETS = {
 UI_PROVIDERS = [(v["label"], k) for k, v in PROVIDERS.items() if k != "mock"]
 
 
+ADDRESS_CHOICES = ([(v["label"], v["base"]) for n, v in PROVIDERS.items() if n not in ("mock", "custom") and v["base"]]
+                   + [(n, u) for n, u in PRESETS.items()])
+
+
+def provider_from_base(base: str) -> str:
+    b = (base or "").strip().rstrip("/")
+    for n, v in PROVIDERS.items():
+        if v["base"] and n != "mock" and v["base"].rstrip("/") == b:
+            return n
+    return "custom"
+
+
+def detect_base(key: str) -> str:
+    d = detect_provider(key)
+    return PROVIDERS[d]["base"] if d and d != "mock" else ""
+
+
 def detect_provider(key: str):
     """Returns the provider name when the key has a known prefix, otherwise None (never guess)."""
     key = (key or "").strip()
@@ -114,3 +131,13 @@ def mask(key: str) -> str:
     if not key:
         return "بدون مفتاح"
     return key[:4] + "…" + key[-3:] if len(key) > 9 else "…"
+
+
+def add_key_generic(name, key, base, model, role="both", paid=False, price_in=0.0, price_out=0.0, rpm=0):
+    """Any OpenAI-style service: you choose the name, the address, the key and the model."""
+    from urllib.parse import urlparse
+    base = (base or "").strip().rstrip("/")
+    prov = provider_from_base(base)
+    name = (name or "").strip() or urlparse(base).netloc or "مفتاح"
+    return add_key(prov, key, model, role, paid, price_in, price_out, rpm or (20 if prov == "custom" else 0),
+                   base if prov in ("custom", "ollama") else "", name)

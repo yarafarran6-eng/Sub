@@ -17,7 +17,7 @@ class Stopped(Exception):
 
 
 def kname(k):
-    return f"{k.get('label') or PROVIDER_LABELS.get(k['provider'], k['provider'])} · {k.get('model', '')}"
+    return k.get("label") or PROVIDER_LABELS.get(k["provider"], k["provider"])
 
 
 def clock(ts):
@@ -138,7 +138,7 @@ class KeyPool:
             elif r["busy"] > 0:
                 st, css = f"يعمل الآن: {TASK_AR.get(r['task'], r['task'])} ({r['busy']} طلب)", "busy"
             elif r["verified"] is False:
-                st, css = "فشل الاختبار" + (f": {r['err'][:100]}" if r.get("err") else ""), "bad"
+                st, css = "فشل الاختبار" + (f": {r['err'][:170]}" if r.get("err") else ""), "bad"
             elif r["verified"] or r["ok"]:
                 st, css = "جاهز ✓", "ok"
             else:

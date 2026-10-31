@@ -21,6 +21,32 @@ class BadRequest(Exception):
     pass
 
 
+def _msg(r):
+    """The service's own error text, as short as possible."""
+    try:
+        j = r.json()
+        if isinstance(j, list) and j:
+            j = j[0]
+        if isinstance(j, dict):
+            e = j.get("error", j)
+            m = (e.get("message") or e.get("detail") or json.dumps(e, ensure_ascii=False)) if isinstance(e, dict) else str(e)
+            return str(j.get("detail") or m)[:260]
+    except Exception:
+        pass
+    return r.text[:260]
+
+
+def _net(e):
+    s = str(e).lower()
+    if isinstance(e, (httpx.ConnectTimeout, httpx.ReadTimeout)) or "timed out" in s:
+        return "انتهت المهلة بدون رد: الخدمة بطيئة أو غير متاحة"
+    if "name or service not known" in s or "getaddrinfo" in s or "[errno -2]" in s or "[errno -3]" in s or "nodename" in s:
+        return "العنوان غير معروف: تأكد من كتابته ومن اتصال الإنترنت"
+    if "refused" in s or "[errno 111]" in s or "10061" in s:
+        return "الاتصال مرفوض: البرنامج غير شغّال عند هذا العنوان (مثل Ollama) أو رقم المنفذ غلط"
+    return f"تعذر الاتصال: {str(e)[:100]}"
+
+
 def _wait_from(r):
     ra = r.headers.get("retry-after")
     if ra:
@@ -80,22 +106,22 @@ def chat(key, messages, max_tokens=4096, temperature=0.3, task="translate", time
     if not base:
         raise BadRequest("لم تحدد عنوان الخادم")
     headers = {"Authorization": f"Bearer {key['key']}"} if key.get("key") else {}
-    if key["provider"] in ("ollama", "custom"):
-        timeout = max(timeout, 900)
+    if any(x in base for x in ("localhost", "127.0.0.1", "0.0.0.0", "192.168.")):
+        timeout = max(timeout, 900)           # local models can be slow
     body = {"model": key["model"], "messages": messages, "temperature": temperature, "max_tokens": max_tokens}
     try:
         r = httpx.post(base + "/chat/completions", json=body, timeout=timeout, headers=headers)
     except (httpx.TimeoutException, httpx.TransportError) as e:
-        raise Transient(f"تعذر الاتصال: {e}")
+        raise Transient(_net(e))
     if r.status_code == 429:
         w = _wait_from(r)
         raise RateLimited(w, _reason(r.text, w), r.text[:200])
     if r.status_code in (401, 403):
-        raise KeyDead(f"{r.status_code}: {r.text[:160]}")
+        raise KeyDead(f"{r.status_code}: {_msg(r)}")
     if r.status_code >= 500:
-        raise Transient(f"{r.status_code}: {r.text[:100]}")
+        raise Transient(f"خطأ من الخدمة نفسها ({r.status_code}): {_msg(r)}")
     if r.status_code >= 400:
-        raise BadRequest(f"{r.status_code}: {r.text[:300]}")
+        raise BadRequest(f"{r.status_code}: {_msg(r)}")
     data = r.json()
     ch = (data.get("choices") or [{}])[0]
     if ch.get("finish_reason") == "length":
@@ -119,11 +145,11 @@ def list_models(provider, key="", base=""):
     try:
         r = httpx.get(b + "/models", headers=headers, timeout=30)
     except (httpx.TimeoutException, httpx.TransportError) as e:
-        raise Transient(f"تعذر الاتصال: {e}")
+        raise Transient(_net(e))
     if r.status_code in (401, 403):
-        raise KeyDead(f"{r.status_code}: {r.text[:120]}")
+        raise KeyDead(f"{r.status_code}: {_msg(r)}")
     if r.status_code >= 400:
-        raise BadRequest(f"{r.status_code}: {r.text[:200]}")
+        raise BadRequest(f"{r.status_code}: {_msg(r)}")
     data = r.json()
     items = data.get("data") or data.get("models") or [] if isinstance(data, dict) else data
     ids = []
