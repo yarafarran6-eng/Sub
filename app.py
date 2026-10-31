@@ -279,6 +279,8 @@ def load_review(jid, only_flagged=False):
     if not jid:
         raise gr.Error("اختر ملفاً")
     meta, units = jobs.load(jid)
+    if quality.recheck(units, meta["tgt"]):
+        jobs.save_units(jid, units)
     us = [u for u in units if u.get("translate")]
     if only_flagged:
         us = [u for u in us if u.get("flag") or not u.get("tr")]

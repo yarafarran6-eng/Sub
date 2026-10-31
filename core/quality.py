@@ -65,3 +65,18 @@ def report(units):
     return {"total": len(tu), "missing": len(tu) - len(done), "flagged": len(flagged),
             "ratio": (tr_c / src_c) if src_c else 0, "by": by,
             "bad_pages": sorted(pages.items(), key=lambda x: -x[1])[:15]}
+
+
+def recheck(units, tgt):
+    """Re-runs the checks on already translated paragraphs (so files translated by an older version get a real report)."""
+    changed = 0
+    for u in units:
+        if u.get("translate") and u.get("tr"):
+            fl = "؛ ".join(check(u["text"], u["tr"], tgt))
+            if fl != (u.get("flag") or ""):
+                if fl:
+                    u["flag"] = fl
+                else:
+                    u.pop("flag", None)
+                changed += 1
+    return changed
