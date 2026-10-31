@@ -93,8 +93,13 @@ def monitor_html(jid=None):
     word = lv.get("word", "صفحة")
     wait_banner = ""
     if running and POOL.waiting_until > now:
+        why = "".join(f"<li><b>{esc(kname(s['k']))}</b>: {esc(s['state'])}</li>" for s in POOL.status() if s["css"] == "wait")
+        long_hint = ("<p>لو ما استخدمت هذي المفاتيح قبل، فغالباً الخدمة هي اللي ردّت بأن حصة هذا النموذج صغيرة أو منتهية. "
+                     "اقرأ «رد الخدمة» أعلاه، ثم أوقف الملف وجرّب «اختيار النموذج تلقائياً» أو أضف مفتاحاً آخر من تبويب المفاتيح.</p>"
+                     if POOL.waiting_until - now > 3600 else "")
         wait_banner = (f"<div class='warnbox'>⏳ كل المفاتيح وصلت حدها. يكمل تلقائياً الساعة "
-                       f"<b>{clock(POOL.waiting_until)}</b> (بعد {human(POOL.waiting_until - now)}). لا تسكّر النافذة السوداء.</div>")
+                       f"<b>{clock(POOL.waiting_until)}</b> (بعد {human(POOL.waiting_until - now)}). لا تسكّر النافذة السوداء."
+                       f"<ul>{why}</ul>{long_hint}</div>")
     tiles = _tile("النسبة الكلية", f"{m.get('pct', 0)}%", esc(m.get("stage", "")))
     if lv.get("u_total"):
         tiles += _tile("الفقرات", f"{lv.get('u_done', 0)} / {lv['u_total']}", "تمت ترجمتها")

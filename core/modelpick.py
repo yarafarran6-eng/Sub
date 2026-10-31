@@ -61,7 +61,10 @@ def auto_pick(k):
         try:
             llm.chat(dict(k, model=c), PING, 20, 0, "ping", 60)
             return {"ok": True, "model": c, "kind": "", "reason": ""}
-        except llm.RateLimited:
+        except llm.RateLimited as e:
+            if e.reason == "zero":
+                last = f"حصة النموذج «{c}» تساوي صفر عندهم. {e.detail}"
+                continue
             return {"ok": True, "model": c, "kind": "", "reason": ""}
         except llm.KeyDead as e:
             return _fail("key", f"المفتاح مرفوض أو بدون صلاحية. رد الخدمة: {e}")

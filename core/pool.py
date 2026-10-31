@@ -51,7 +51,7 @@ class KeyPool:
 
     def _rt(self, kid):
         return self.rt.setdefault(kid, {"next_ok": 0.0, "cool": 0.0, "reason": "", "dead": "", "verified": None,
-                                        "ok": 0, "busy": 0, "task": "", "tin": 0, "tout": 0, "err": ""})
+                                        "ok": 0, "busy": 0, "task": "", "tin": 0, "tout": 0, "err": "", "detail": ""})
 
     def _alive(self, k, role):
         r = self._rt(k["id"])
@@ -72,7 +72,10 @@ class KeyPool:
                 now = time.time()
                 alive = [k for k in load_keys() if self._alive(k, role)]
                 if not alive:
-                    raise NoKeys("ما فيه أي مفتاح صالح (كلها مرفوضة أو متوقفة أو نفد رصيدها). أضف مفتاحاً أو اختبر المفاتيح.")
+                    why = "؛ ".join(f"{kname(k)}: {self._rt(k['id'])['dead'][:140]}" for k in load_keys()
+                                    if self._rt(k["id"])["dead"])
+                    raise NoKeys("ما فيه أي مفتاح صالح (كلها مرفوضة أو متوقفة أو نفد رصيدها)."
+                                 + (f" الأسباب: {why}" if why else " أضف مفتاحاً أو اختبر المفاتيح."))
                 ready = [k for k in alive if self._rt(k["id"])["cool"] <= now]
                 if ready:
                     free = [k for k in ready if not k.get("paid") and self._rt(k["id"])["next_ok"] <= now + 3]
@@ -92,14 +95,18 @@ class KeyPool:
                 return chosen[0]
             time.sleep(wait_for)
 
-    def cooldown(self, k, seconds, reason="minute"):
+    def cooldown(self, k, seconds, reason="minute", detail=""):
+        if reason == "zero":
+            self.kill(k, f"الحصة المجانية لنموذج «{k.get('model') or 'تلقائي'}» تساوي صفر عند الخدمة، فهو غير متاح بدون دفع "
+                         f"أو غير مفعّل لمفتاحك. غيّر النموذج أو فعّل الفوترة. رد الخدمة: {detail}")
+            return
         r = self._rt(k["id"])
-        r["cool"], r["reason"] = time.time() + seconds, reason
+        r["cool"], r["reason"], r["detail"] = time.time() + seconds, reason, detail
         others = [x for x in load_keys() if x["id"] != k["id"] and self._alive(x, "translate")
                   and self._rt(x["id"])["cool"] <= time.time()]
         why = "الحد اليومي" if reason == "day" else "حد الدقيقة"
         tail = "وتحوّلت الطلبات إلى مفتاح آخر" if others else "وكل المفاتيح الأخرى مشغولة أو تنتظر"
-        self.log(f"⏳ {kname(k)} وصل {why}. ينتظر {human(seconds)} (حتى {clock(r['cool'])}) {tail}", "warn")
+        self.log(f"⏳ {kname(k)} وصل {why}. ينتظر {human(seconds)} (حتى {clock(r['cool'])}) {tail}. رد الخدمة: {detail[:140]}", "warn")
 
     def kill(self, k, why):
         r = self._rt(k["id"])
@@ -134,7 +141,8 @@ class KeyPool:
                 st, css = "مرفوض: " + r["dead"][:70], "bad"
             elif r["cool"] > now:
                 why = "الحد اليومي" if r["reason"] == "day" else "حد الدقيقة"
-                st, css = f"ينتظر حتى {clock(r['cool'])} ({why}، باقي {human(r['cool'] - now)})", "wait"
+                st, css = (f"ينتظر حتى {clock(r['cool'])} ({why}، باقي {human(r['cool'] - now)})"
+                           + (f". رد الخدمة: {r['detail'][:110]}" if r.get("detail") else "")), "wait"
             elif r["busy"] > 0:
                 st, css = f"يعمل الآن: {TASK_AR.get(r['task'], r['task'])} ({r['busy']} طلب)", "busy"
             elif r["verified"] is False:
@@ -163,7 +171,7 @@ def call(messages, role="translate", max_tokens=4096, temperature=0.3, task="tra
             POOL.record(k, usage)
             return text
         except llm.RateLimited as e:          # rate limits never count as failures: wait and switch key
-            POOL.cooldown(k, e.retry_after, e.reason)
+            POOL.cooldown(k, e.retry_after, e.reason, e.detail)
         except llm.KeyDead as e:
             POOL.kill(k, str(e))
         except llm.Transient as e:

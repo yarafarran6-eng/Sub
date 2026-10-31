@@ -139,12 +139,21 @@ def _process(jid):
             kind, units, info = parser.parse_any(str(next(d.glob("source.*"))), str(d / "img"), on_page)
             save_units(jid, units)
             note = ""
-            if info.get("scanned_pages"):
-                note = f"تنبيه: صفحات بدون نص (ممسوحة ضوئياً) ولن تُترجم: {info['scanned_pages'][:10]}"
+            n_img = len(info.get("scanned_pages") or [])
+            if n_img:
+                note = (f"{n_img} من {info['pages']} صفحة بدون نص قابل للقراءة (غلاف أو رسومات أو صور). "
+                        "هذي الصفحات تبقى كما هي في الـ PDF ولا تُترجم.")
+                if n_img > info["pages"] * 0.5:
+                    note += " ⚠ أغلب الملف صور ممسوحة، والترجمة تحتاج قراءة النص من الصور (OCR) وهذا غير مدعوم حالياً."
             set_state(jid, kind=kind, pages=info["pages"], msg=note)
         meta, _ = load(jid)
         kind_word = "صفحة" if meta.get("kind") == "pdf" else "فصل"
         u_total = sum(1 for u in units if u.get("translate"))
+        if u_total == 0:
+            set_state(jid, status="error", stage="لا يوجد نص", live={"phase": "error", "label": "لا يوجد نص قابل للترجمة"},
+                      msg="الملف ما فيه نص قابل للقراءة (كله صور ممسوحة). يحتاج OCR وهو غير مدعوم حالياً. " + meta.get("msg", ""))
+            POOL.log("❌ الملف بدون نص قابل للترجمة (صور فقط)", "error")
+            return
 
         if not meta.get("ctx"):
             live = {"phase": "context", "phase_start": time.time(),

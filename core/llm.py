@@ -67,6 +67,8 @@ def _wait_from(r):
 
 def _reason(text, wait):
     t = text.lower()
+    if re.search(r"limit['\"]?\s*[:=]\s*0(?![\d.])", t):
+        return "zero"                         # the quota of this model is zero for this key (not "used up")
     if wait > 900 or any(w in t for w in ("per day", "perday", "daily", "tpd", "rpd", "per_day")):
         return "day"
     return "minute"
@@ -117,7 +119,7 @@ def chat(key, messages, max_tokens=4096, temperature=0.3, task="translate", time
         raise Transient(_net(e))
     if r.status_code == 429:
         w = _wait_from(r)
-        raise RateLimited(w, _reason(r.text, w), r.text[:200])
+        raise RateLimited(w, _reason(r.text, w), _msg(r))
     if r.status_code in (401, 403):
         raise KeyDead(f"{r.status_code}: {_msg(r)}")
     if r.status_code >= 500:

@@ -4,7 +4,7 @@ from core import auth, jobs, editor, builder, llm, modelpick, monitor
 from core.config import JOBS, get_settings, update_settings
 from core.keystore import (ADDRESS_CHOICES, PROVIDERS, PROVIDER_LABELS, add_key_generic, detect_base, delete_key, detect_provider,
                            load_keys, mask, provider_from_base, update_key)
-from core.pool import POOL, kname
+from core.pool import POOL, human, kname
 
 E = html.escape
 LANG_CHOICES = [("العربية", "ar"), ("English", "en"), ("日本語", "ja")]
@@ -66,10 +66,17 @@ def test_key(k):
         POOL.revive(k["id"])
         POOL.mark_verified(k["id"], True)
         return True, f"✅ «{name}» شغّال."
-    except llm.RateLimited:
+    except llm.RateLimited as e:
+        if e.reason == "zero":
+            reason = (f"الحصة المجانية لنموذج «{model or 'تلقائي'}» تساوي صفر عندهم، فهو غير متاح بدون دفع أو غير مفعّل لمفتاحك. "
+                      f"جرّب «اختيار النموذج تلقائياً». رد الخدمة: {e.detail}")
+            POOL.mark_verified(k["id"], False, reason)
+            return False, f"❌ «{name}»: {reason}"
         POOL.revive(k["id"])
         POOL.mark_verified(k["id"], True)
-        return True, f"⚠ «{name}» صحيح لكنه وصل حد الاستخدام الآن، وسيعمل لاحقاً."
+        kind = "اليومي" if e.reason == "day" else "حد الدقيقة"
+        return True, (f"⚠ «{name}» صحيح لكن الخدمة ردّت بأنه وصل الحد {kind}، ويرجع بعد {human(e.retry_after)}. "
+                      f"رد الخدمة: {e.detail}")
     except llm.KeyDead as e:
         POOL.kill(k, str(e))
         return False, f"❌ «{name}»: المفتاح مرفوض أو بدون صلاحية. رد الخدمة: {e}"
