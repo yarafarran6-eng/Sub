@@ -62,7 +62,7 @@ def keys_html():
         k = s["k"]
         paid = " · مدفوع" if k.get("paid") else ""
         rows.append(
-            f"<tr><td><b>{esc(kname(k))}</b><div class='sub'>{esc(k.get('model', ''))} · "
+            f"<tr><td><b>{esc(kname(k))}</b><div class='sub'>{esc(k.get('model') or 'نموذج تلقائي')} · "
             f"{esc(urlparse(k.get('base') or PROVIDERS[k['provider']]['base']).netloc)} · {esc(k['id'])}{paid}</div></td>"
             f"<td><span class='chip k-{s['css']}'>{esc(s['state'])}</span></td>"
             f"<td>{s['ok']}</td><td>{s['tin']:,} / {s['tout']:,}</td></tr>")

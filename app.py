@@ -1,6 +1,6 @@
 import html, os, shutil
 import gradio as gr
-from core import auth, jobs, editor, builder, llm, monitor
+from core import auth, jobs, editor, builder, llm, modelpick, monitor
 from core.config import JOBS, get_settings, update_settings
 from core.keystore import (ADDRESS_CHOICES, PROVIDERS, PROVIDER_LABELS, add_key_generic, detect_base, delete_key, detect_provider,
                            load_keys, mask, provider_from_base, update_key)
@@ -102,6 +102,24 @@ def test_key(k):
         return False, f"❌ «{name}»: {reason}"
 
 
+def auto_model(k):
+    """Lets the site choose a working model for this key. Returns (ok, message)."""
+    name = kname(k)
+    res = modelpick.auto_pick(k)
+    if res["ok"]:
+        update_key(k["id"], model=res["model"])
+        POOL.revive(k["id"])
+        POOL.mark_verified(k["id"], True)
+        shown = f"«{res['model']}»" if res["model"] else "(بدون اسم، الخدمة تختار بنفسها)"
+        return True, (f"✅ «{name}» شغّال. اخترت له النموذج {shown} تلقائياً. "
+                      "تقدر تغيّره من «إدارة مفتاح». لو خدمتك مدفوعة وتبي تتحكم بالتكلفة، اكتب النموذج بنفسك.")
+    if res["kind"] == "key":
+        POOL.kill(k, res["reason"])
+    else:
+        POOL.mark_verified(k["id"], False, res["reason"])
+    return False, f"❌ «{name}»: {res['reason']}"
+
+
 def fetch_models_ui(addr, key):
     addr = (addr or "").strip()
     if not addr:
@@ -138,14 +156,15 @@ def add_key_ui(name, key, addr, model, role, paid, pin, pout, rpm):
         raise gr.Error("اختر الخدمة من القائمة، أو الصق عنوانها")
     if not addr.startswith("http"):
         raise gr.Error("العنوان لازم يبدأ بـ http أو https")
-    if not (model or "").strip():
-        raise gr.Error("اختر النموذج أو اكتب اسمه (تقدر تضغط «جلب النماذج المتاحة»)")
     warn = ""
     det = detect_base(key)
     if det and det.rstrip("/") != addr.rstrip("/"):
         warn = "\n\n⚠ شكل المفتاح يدل على خدمة ثانية غير العنوان اللي اخترته. لو فشل الاختبار فهذا غالباً السبب."
-    entry = add_key_generic(name, key, addr, model, role, paid, pin, pout, rpm)
-    ok, msg = test_key(entry)
+    entry = add_key_generic(name, key, addr, (model or "").strip(), role, paid, pin, pout, rpm)
+    if (model or "").strip():
+        ok, msg = test_key(entry)
+    else:
+        ok, msg = auto_model(entry)
     return "", "", key_panel(), gr.update(choices=key_choices()), msg + warn
 
 
@@ -178,9 +197,11 @@ def key_action(kid, what, newval=""):
             raise gr.Error("اكتب الاسم الجديد")
         update_key(kid, label=newval.strip())
         msg = f"✏ صار الاسم «{newval.strip()}»."
+    elif what == "auto" and k:
+        ok, msg = auto_model(k)
     elif what == "model" and k:
         if not (newval or "").strip():
-            raise gr.Error("اختر النموذج الجديد أو اكتب اسمه")
+            raise gr.Error("اختر النموذج الجديد أو اكتب اسمه، أو اضغط «اختيار النموذج تلقائياً»")
         update_key(kid, model=newval.strip())
         POOL.revive(kid)
         ok, msg = test_key(next(x for x in load_keys() if x["id"] == kid))
@@ -376,7 +397,7 @@ with gr.Blocks(title="مترجم الروايات") as demo:
     with gr.Tabs():
         # ============================================================ 1. KEYS
         with gr.Tab("١. المفاتيح"):
-            step("أ", "أضف مفتاحاً", "أنت تتحكم فيه كامل: الاسم، والمفتاح، وعنوان الخدمة، والنموذج. أي خدمة تدعم الطريقة المعيارية (OpenAI) تشتغل، مو بس اللي في القائمة. المفاتيح تُحفظ على جهازك فقط.")
+            step("أ", "أضف مفتاحاً", "تعطي الموقع: اسماً تختاره، والمفتاح، وعنوان الخدمة، وهو يختار النموذج بنفسه. أي خدمة تدعم الطريقة المعيارية (OpenAI) تشتغل، مو بس اللي في القائمة. المفاتيح تُحفظ على جهازك فقط.")
             opt("الاسم", "اسم تختاره أنت عشان تعرف المفتاح، مثل «سيارة» أو «فيصل» أو «جيميني الأول».",
                 "يظهر في الجداول والتنبيهات، وما له علاقة باسم النموذج.", "اكتب أي اسم. لو تركته فارغاً يسمّيه الموقع باسم عنوان الخدمة.")
             k_name = gr.Textbox(show_label=False, placeholder="مثال: سيارة، فيصل، جيميني الأول")
@@ -388,12 +409,12 @@ with gr.Blocks(title="مترجم الروايات") as demo:
                 "اختر من القائمة، أو الصق عنوان أي خدمة من صفحة وثائقها (يبدأ بـ https). لـ Ollama اختر «Ollama (على جهازك)». لو المفتاح معروف الشكل يتعبى العنوان لحاله.")
             k_addr = gr.Dropdown(ADDRESS_CHOICES, value=None, allow_custom_value=True, show_label=False,
                                  elem_classes="ltr", info="اختر من القائمة أو الصق أي عنوان")
-            opt("النموذج", "اسم «العقل» اللي يترجم عند هذه الخدمة.",
-                "الأسماء تتغير عند الشركات، فالأضمن تجلبها منهم.",
-                "اضغط «جلب النماذج المتاحة» لتختار من قائمتهم الحالية، أو اكتب الاسم بيدك. مع Ollama اكتب اسم نموذج نزّلته.")
-            k_model = gr.Dropdown([], value=None, allow_custom_value=True, show_label=False, elem_classes="ltr")
-            b_fetch = gr.Button("جلب النماذج المتاحة من الخدمة")
             with gr.Accordion("خيارات إضافية", open=False):
+                opt("النموذج (اختياري)", "اسم «العقل» اللي يترجم عند هذه الخدمة.",
+                    "لو تركته فارغاً يختار الموقع بنفسه: يسأل الخدمة عن قائمتها ويجرّب لين يلقى نموذجاً يشتغل، وإذا الخدمة ما تعرض قائمة يرسل الطلب بدون اسم نموذج.",
+                    "اتركه فارغاً. اكتبه فقط لو تبي نموذجاً معيناً، أو خدمتك مدفوعة وتبي تتحكم بالتكلفة. وتقدر تضغط «جلب النماذج المتاحة» لتختار من قائمتهم.")
+                k_model = gr.Dropdown([], value=None, allow_custom_value=True, show_label=False, elem_classes="ltr")
+                b_fetch = gr.Button("جلب النماذج المتاحة من الخدمة")
                 opt("الاستخدام", "يحدد هل المفتاح يشارك في الترجمة أو المراجعة أو الاثنين.",
                     "تخصص المفتاح الأقوى للتدقيق والبقية للترجمة.", "اتركه «ترجمة وتدقيق» لو ما عندك سبب ثاني.")
                 k_role = gr.Dropdown(ROLE_CHOICES, value="both", show_label=False)
@@ -402,7 +423,7 @@ with gr.Blocks(title="مترجم الروايات") as demo:
                     "اتركه 0 ليختار الموقع قيمة مناسبة، أو اكتب الرقم اللي تعرفه من حد خدمتك.")
                 k_rpm = gr.Number(0, show_label=False, precision=0)
                 opt("مفتاح مدفوع", "تعلّم الموقع إن هذا المفتاح يخصم من رصيدك.",
-                    "الموقع يحسب الصرف ويوقف المدفوع عند السقف، ويستخدم المجاني أولاً.",
+                    "الموقع يحسب الصرف ويوقف المدفوع عند السقف، ويستخدم المجاني أولاً. (الاختيار التلقائي للنموذج لا يعرف الأسعار.)",
                     "علّمه فقط لو مفتاحك مدفوع، واكتب الأسعار من صفحة أسعار الخدمة.")
                 k_paid = gr.Checkbox(False, label="هذا المفتاح مدفوع")
                 with gr.Row(visible=False) as price_row:
@@ -428,6 +449,7 @@ with gr.Blocks(title="مترجم الروايات") as demo:
                                          info="النموذج الجديد (اكتبه أو اجلب القائمة)", elem_classes="ltr", scale=3)
                 b_fetch2 = gr.Button("جلب نماذج هذا المفتاح", scale=1)
                 b_model = gr.Button("تغيير النموذج", scale=1)
+            b_auto = gr.Button("اختيار النموذج تلقائياً لهذا المفتاح")
         # ============================================================ 2. TRANSLATE
         with gr.Tab("٢. الترجمة"):
             step("أ", "ارفع الملفات", "تقدر ترفع أكثر من ملف، وتترجم بالدور واحداً بعد واحد.")
@@ -551,6 +573,7 @@ with gr.Blocks(title="مترجم الروايات") as demo:
     b_delk.click(lambda k: key_action(k, "delete"), ksel, [kpanel, ksel, kmsg])
     b_rename.click(lambda k, n: key_action(k, "rename", n), [ksel, k_newname], [kpanel, ksel, kmsg])
     b_model.click(lambda k, m: key_action(k, "model", m), [ksel, k_newmodel], [kpanel, ksel, kmsg])
+    b_auto.click(lambda k: key_action(k, "auto"), ksel, [kpanel, ksel, kmsg])
     b_testall.click(test_all, None, [kpanel, kmsg])
     go.click(add_jobs, [files, src, tgt, style, golden, sens], [gmsg, jsel])
     b_resume.click(lambda j: job_action(j, "resume"), jsel, [jsel, jmsg])

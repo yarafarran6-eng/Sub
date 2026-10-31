@@ -108,7 +108,9 @@ def chat(key, messages, max_tokens=4096, temperature=0.3, task="translate", time
     headers = {"Authorization": f"Bearer {key['key']}"} if key.get("key") else {}
     if any(x in base for x in ("localhost", "127.0.0.1", "0.0.0.0", "192.168.")):
         timeout = max(timeout, 900)           # local models can be slow
-    body = {"model": key["model"], "messages": messages, "temperature": temperature, "max_tokens": max_tokens}
+    body = {"messages": messages, "temperature": temperature, "max_tokens": max_tokens}
+    if key.get("model"):                       # no model name = let the service choose its own
+        body["model"] = key["model"]
     try:
         r = httpx.post(base + "/chat/completions", json=body, timeout=timeout, headers=headers)
     except (httpx.TimeoutException, httpx.TransportError) as e:
