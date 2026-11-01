@@ -23,9 +23,16 @@ def _bg(page, rect):
         return (1, 1, 1)
 
 
-def _font_css(tgt):
+def list_fonts():
+    return sorted(f.name for f in FONTS.glob("*") if f.suffix.lower() in (".ttf", ".otf"))
+
+
+def _font_css(tgt, font=None):
     faces = ""
-    if tgt == "ar":
+    if font and (FONTS / font).exists():
+        faces = f"@font-face{{font-family:'SubFont';src:url('{font}');}}@font-face{{font-family:'SubFont';font-weight:bold;src:url('{font}');}}"
+        fam = "'SubFont'"
+    elif tgt == "ar":
         faces = ("@font-face{font-family:'SubFont';src:url('NotoNaskhArabic-Regular.ttf');}"
                  "@font-face{font-family:'SubFont';font-weight:bold;src:url('NotoNaskhArabic-Bold.ttf');}")
         fam = "'SubFont'"
@@ -37,57 +44,77 @@ def _font_css(tgt):
     return faces, fam
 
 
-def build_pdf(src_pdf, units, tgt, out_path):
+def _apply_page(doc, pno, us, obstacles, tgt, faces, fam, arch):
+    """Replaces the original text of the given paragraphs on one page. Returns how many were shrunk to fit."""
     import fitz
-    doc = fitz.open(src_pdf)
-    faces, fam = _font_css(tgt)
-    arch = fitz.Archive(str(FONTS)) if FONTS.exists() else None
     rtl = tgt in RTL
+    page = doc[pno]
+    W = page.rect.width
+    shrunk = 0
+    for u in us:
+        r = fitz.Rect(u["bbox"])
+        page.add_redact_annot(r, fill=_bg(page, r))
+    try:
+        page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE, graphics=fitz.PDF_REDACT_LINE_ART_NONE)
+    except Exception:
+        page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE)
+    for u in us:
+        x0, y0, x1, y1 = u["bbox"]
+        limit = page.rect.y1 - 24            # let the block grow downwards into free space before shrinking the text
+        for v in obstacles:
+            if v is not u and v["bbox"][1] >= y1 - 1 and v["bbox"][0] < x1 and v["bbox"][2] > x0:
+                limit = min(limit, v["bbox"][1] - 3)
+        y1 = max(y1, limit)
+        if rtl and u.get("align") != "center":
+            x0, x1 = W - x1, W - x0                      # mirror for right-to-left reading
+        rect = fitz.Rect(x0, y0, x1, y1)
+        a = u.get("align", "left")
+        align = {"left": "right", "right": "left", "center": "center"}[a] if rtl else a
+        size = u["size"] * (1.04 if rtl else 1.0)
+        css = (faces + f"body{{font-family:{fam};font-size:{size}pt;color:{_rgb(u.get('color', 0))};"
+               f"text-align:{align};direction:{'rtl' if rtl else 'ltr'};margin:0;"
+               f"font-weight:{'bold' if u.get('bold') else 'normal'};line-height:1.35;}}")
+        body = "<p style='margin:0'>" + html.escape(u["tr"]).replace("\n", "<br>") + "</p>"
+        spare, scale = page.insert_htmlbox(rect, body, css=css, archive=arch, scale_low=0.5)
+        if scale and scale < 1:
+            shrunk += 1
+    return shrunk
+
+
+def _units_by_page(units):
     by_page, all_on_page = {}, {}
     for u in units:
         if u.get("bbox"):
             all_on_page.setdefault(u["page"], []).append(u)
         if u["kind"] == "text" and u.get("translate") and u.get("tr"):
             by_page.setdefault(u["page"], []).append(u)
-    shrunk = 0
-    for pno, us in by_page.items():
-        page = doc[pno]
-        W = page.rect.width
-        for u in us:
-            r = fitz.Rect(u["bbox"])
-            page.add_redact_annot(r, fill=_bg(page, r))
-        try:
-            page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE, graphics=fitz.PDF_REDACT_LINE_ART_NONE)
-        except Exception:
-            page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE)
-        for u in us:
-            x0, y0, x1, y1 = u["bbox"]
-            # let the block grow downwards into free space (down to the next block/image) before shrinking text
-            limit = page.rect.y1 - 24
-            for v in all_on_page.get(pno, []):
-                if v is not u and v["bbox"][1] >= y1 - 1 and v["bbox"][0] < x1 and v["bbox"][2] > x0:
-                    limit = min(limit, v["bbox"][1] - 3)
-            y1 = max(y1, limit)
-            if rtl and u.get("align") != "center":
-                x0, x1 = W - x1, W - x0                      # mirror for right-to-left reading
-            rect = fitz.Rect(x0, y0, x1, y1)
-            a = u.get("align", "left")
-            if rtl:
-                align = {"left": "right", "right": "left", "center": "center"}[a]
-            else:
-                align = a
-            size = u["size"] * (1.04 if rtl else 1.0)
-            css = (faces + f"body{{font-family:{fam};font-size:{size}pt;color:{_rgb(u.get('color', 0))};"
-                   f"text-align:{align};direction:{'rtl' if rtl else 'ltr'};margin:0;"
-                   f"font-weight:{'bold' if u.get('bold') else 'normal'};line-height:1.35;}}")
-            body = f"<p style='margin:0'>{html.escape(u['tr'])}</p>"
-            spare, scale = page.insert_htmlbox(rect, body, css=css, archive=arch, scale_low=0.5)
-            if scale and scale < 1:
-                shrunk += 1
+    return by_page, all_on_page
+
+
+def build_pdf(src_pdf, units, tgt, out_path, font=None):
+    import fitz
+    doc = fitz.open(src_pdf)
+    faces, fam = _font_css(tgt, font)
+    arch = fitz.Archive(str(FONTS)) if FONTS.exists() else None
+    by_page, all_on_page = _units_by_page(units)
+    shrunk = sum(_apply_page(doc, pno, us, all_on_page.get(pno, []), tgt, faces, fam, arch) for pno, us in by_page.items())
     doc.subset_fonts()
     doc.save(out_path, garbage=3, deflate=True)
     doc.close()
     return {"pages": len(by_page), "shrunk_blocks": shrunk}
+
+
+def preview_page(src_pdf, units, tgt, pno, out_png, font=None, dpi=100):
+    """Renders ONE page exactly as it will look in the final file (fast: only this page is processed)."""
+    import fitz
+    doc = fitz.open(src_pdf)
+    faces, fam = _font_css(tgt, font)
+    arch = fitz.Archive(str(FONTS)) if FONTS.exists() else None
+    by_page, all_on_page = _units_by_page(units)
+    if pno in by_page:
+        _apply_page(doc, pno, by_page[pno], all_on_page.get(pno, []), tgt, faces, fam, arch)
+    doc[pno].get_pixmap(dpi=dpi).save(out_png)
+    doc.close()
 
 
 EPUB_CSS_RTL = "body{direction:rtl;text-align:justify;line-height:1.9;font-family:serif;} h1,h2,h3{text-align:center;} img{max-width:100%;display:block;margin:1em auto;}"

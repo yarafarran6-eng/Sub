@@ -10,17 +10,20 @@ def _has_letters(s):
     return bool(re.search(r"[^\W\d_]", s, re.UNICODE))
 
 
-def parse_pdf(path, img_dir, on_page=None):
+def parse_pdf(path, img_dir, on_page=None, with_images=True):
     import fitz
-    img_dir = Path(img_dir)
-    img_dir.mkdir(parents=True, exist_ok=True)
+    if with_images:
+        img_dir = Path(img_dir)
+        img_dir.mkdir(parents=True, exist_ok=True)
     doc = fitz.open(path)
+    if not with_images:
+        img_dir = None
     units, sizes, scanned = [], [], []
     for pno, page in enumerate(doc):
         if on_page:
             on_page(pno + 1, len(doc))
         W = page.rect.width
-        d = page.get_text("dict")
+        d = page.get_text("dict") if with_images else page.get_text("dict", flags=fitz.TEXTFLAGS_TEXT)
         blocks = []
         n_text = 0
         for b in d["blocks"]:
@@ -64,7 +67,7 @@ def parse_pdf(path, img_dir, on_page=None):
                 align = "left"
             blocks.append({"kind": "text", "page": pno, "bbox": [x0, y0, x1, y1], "text": text,
                            "size": round(size, 2), "bold": bold > len(sz) / 2, "color": color, "align": align})
-        if n_text == 0 and any(x["kind"] == "image" for x in blocks):
+        if n_text == 0 and (any(x["kind"] == "image" for x in blocks) or (not with_images and page.get_images())):
             scanned.append(pno + 1)
         # merge consecutive blocks that are really one paragraph
         merged = []

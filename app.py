@@ -1,6 +1,6 @@
-import html, os, shutil
+import html, os, shutil, time
 import gradio as gr
-from core import auth, jobs, editor, builder, llm, modelpick, monitor, quality
+from core import auth, jobs, editor, builder, llm, manual, modelpick, monitor, quality
 from core.config import JOBS, get_settings, update_settings
 from core.keystore import (ADDRESS_CHOICES, PROVIDERS, PROVIDER_LABELS, add_key_generic, detect_base, delete_key, detect_provider,
                            load_keys, mask, provider_from_base, update_key)
@@ -357,6 +357,149 @@ def generate(jid, rows, ctx, want_pdf, want_epub, want_txt):
     return files, "✅ " + ("، ".join(notes) or "تم توليد الملفات")
 
 
+# ------------------------------------------------------------------ manual translation
+SLOTS = 40
+
+
+def _mp_choices():
+    return [(f"{m['name']} · {m['pages']} صفحة · مترجم {m['done']} من {m['total']} [{m['id']}]", m["id"]) for m in manual.list_projects()]
+
+
+def _page_us(units, page):
+    return [u for u in units if u.get("translate") and u["page"] == page]
+
+
+def _slot_updates(us):
+    out = []
+    for i in range(SLOTS):
+        if i < len(us):
+            out += [gr.update(visible=True), gr.update(value=us[i]["text"], label=f"النص الإنجليزي · فقرة {i + 1}"),
+                    gr.update(value=us[i].get("manual", ""), label=f"الترجمة العربية · فقرة {i + 1}")]
+        else:
+            out += [gr.update(visible=False), gr.update(value=""), gr.update(value="")]
+    return out
+
+
+def _m_info(meta, units, page, us):
+    tu = [u for u in units if u.get("translate")]
+    done = sum(1 for u in tu if u.get("tr"))
+    note = ""
+    if not us:
+        note += " · لا يوجد نص قابل للقراءة في هذه الصفحة (صورة أو فراغ)"
+    if len(us) > SLOTS:
+        note += f" · ⚠ في الصفحة {len(us)} فقرة، يظهر أول {SLOTS} فقط"
+    return (f"**صفحة {page + 1} من {meta['pages']}** · مترجم في هذه الصفحة {sum(1 for u in us if u.get('tr'))} من {len(us)} فقرة"
+            f" · الإجمالي {done} من {len(tu)}{note}")
+
+
+def _m_open(pid, page, msg=""):
+    meta, units = manual.load(pid)
+    page = max(0, min(page, meta["pages"] - 1))
+    us = _page_us(units, page)
+    return [pid, gr.update(choices=_mp_choices(), value=pid), msg, page, page + 1, _m_info(meta, units, page, us)] + _slot_updates(us)
+
+
+def manual_new(file, progress=gr.Progress()):
+    guard()
+    if not file:
+        raise gr.Error("ارفع ملف PDF أولاً")
+    path = file if isinstance(file, str) else file.name
+    if not path.lower().endswith(".pdf"):
+        raise gr.Error("الترجمة اليدوية تدعم ملفات PDF فقط")
+    pid = manual.create(path, lambda i, n: progress(i / max(n, 1), desc=f"يستخرج النص: صفحة {i} من {n}"))
+    meta, units = manual.load(pid)
+    note = f"✅ استُخرج نص {meta['pages']} صفحة في {meta['extract_seconds']} ثانية ({sum(1 for u in units if u.get('translate'))} فقرة)."
+    if meta["no_text_pages"]:
+        note += f" {len(meta['no_text_pages'])} صفحة بدون نص قابل للقراءة (غلاف أو رسومات أو صور)، وتبقى كما هي."
+    return _m_open(pid, 0, note)
+
+
+def manual_open(pid):
+    guard()
+    if not pid:
+        raise gr.Error("اختر مشروعاً من القائمة")
+    return _m_open(pid, 0, "")
+
+
+def _save_page(pid, cur, ars):
+    meta, units = manual.load(pid)
+    us = _page_us(units, cur)
+    n = 0
+    for i, u in enumerate(us[:SLOTS]):
+        v = (ars[i] or "").strip()
+        if v != (u.get("manual") or ""):
+            n += 1
+        if v:
+            u["manual"], u["tr"] = v, v
+        else:
+            u.pop("manual", None)
+            u.pop("tr", None)
+    manual.save_units(pid, units)
+    return meta, units, n
+
+
+def manual_nav(pid, cur, target, how, *ars):
+    guard()
+    if not pid:
+        raise gr.Error("افتح ملفاً أولاً")
+    meta, units, n = _save_page(pid, cur, ars)
+    if how == "next":
+        t = cur + 1
+    elif how == "prev":
+        t = cur - 1
+    elif how == "todo":                        # next page that still has untranslated text
+        t = next((p for p in range(cur + 1, meta["pages"]) if any(not u.get("tr") for u in _page_us(units, p))), cur)
+    else:
+        t = int(target or 1) - 1
+    t = max(0, min(t, meta["pages"] - 1))
+    us = _page_us(units, t)
+    return [t, t + 1, _m_info(meta, units, t, us)] + _slot_updates(us)
+
+
+def manual_save(pid, cur, *ars):
+    guard()
+    if not pid:
+        raise gr.Error("افتح ملفاً أولاً")
+    meta, units, n = _save_page(pid, cur, ars)
+    return f"💾 حُفظت الصفحة {cur + 1} ({n} تعديل)."
+
+
+def manual_preview(pid, cur, font, *ars):
+    guard()
+    if not pid:
+        raise gr.Error("افتح ملفاً أولاً")
+    meta, units, n = _save_page(pid, cur, ars)
+    out = str(manual._dir(pid) / f"preview_{cur}.png")
+    t0 = time.time()
+    builder.preview_page(manual.source_path(pid), units, "ar", cur, out, font or None)
+    return out, f"👁 هذي الصفحة {cur + 1} كما ستظهر في الملف النهائي ({time.time() - t0:.1f} ثانية)."
+
+
+def manual_confirm(pid, cur, font, *ars):
+    guard()
+    if not pid:
+        raise gr.Error("افتح ملفاً أولاً")
+    meta, units, n = _save_page(pid, cur, ars)
+    if not any(u.get("tr") for u in units):
+        raise gr.Error("ما ترجمت أي فقرة بعد")
+    out = manual._dir(pid) / "out"
+    shutil.rmtree(out, ignore_errors=True)
+    out.mkdir()
+    dst = str(out / (os.path.splitext(meta["name"])[0] + "_ar.pdf"))
+    t0 = time.time()
+    info = builder.build_pdf(manual.source_path(pid), units, "ar", dst, font or None)
+    left = sum(1 for u in units if u.get("translate") and not u.get("tr"))
+    return dst, (f"✅ أُدرجت ترجمتك في {info['pages']} صفحة خلال {time.time() - t0:.0f} ثانية. "
+                 + (f"بقيت {left} فقرة بالإنجليزي لأنك ما ترجمتها." if left else "كل الفقرات مترجمة."))
+
+
+def manual_delete(pid):
+    guard()
+    if pid:
+        manual.delete(pid)
+    return gr.update(choices=_mp_choices(), value=None), "🗑 حُذف المشروع."
+
+
 # ------------------------------------------------------------------ settings
 def save_budget(usd, reset):
     guard()
@@ -532,6 +675,55 @@ with gr.Blocks(title="مترجم الروايات") as demo:
             kmon = gr.HTML(monitor.keys_html)
             gr.HTML("<div class='step'><i>📜</i>آخر الأحداث</div>")
             ev = gr.HTML(monitor.events_html)
+        # ============================================================ MANUAL
+        with gr.Tab("✍ ترجمة يدوية"):
+            step("أ", "افتح الملف", "ما يحتاج أي مفتاح أو API: الموقع يستخرج نص الملف فقط، وأنت تترجم بيدك.")
+            opt("رفع ملف PDF", "يستخرج الموقع النص من كل صفحة، مرتباً بالفقرات.",
+                "تشوف نص كل صفحة بالإنجليزي وبجانبه خانة عربية فاضية تترجم فيها بيدك.",
+                "ارفع الملف واضغط «استخراج النص». استخراج 450 صفحة يأخذ عادة ثواني قليلة، وقد يطول مع الملفات الثقيلة.")
+            m_file = gr.File(show_label=False, file_types=[".pdf"])
+            b_mnew = gr.Button("استخراج النص وفتح الملف", variant="primary")
+            opt("مشاريعي السابقة", "الملفات اللي بدأت ترجمتها يدوياً.", "تكمل من حيث وقفت، وكل شي محفوظ.", "اختر مشروعاً ثم «فتح».")
+            m_sel = gr.Dropdown(_mp_choices(), show_label=False, value=None, interactive=True)
+            with gr.Row():
+                b_mopen = gr.Button("فتح")
+                b_mdel = gr.Button("حذف المشروع")
+            m_msg = gr.Markdown()
+            m_pid, m_cur = gr.State(""), gr.State(0)
+            step("ب", "ترجم الصفحات", "الإنجليزي على اليسار والعربي على اليمين. تُحفظ ترجمتك تلقائياً عند الانتقال لصفحة ثانية.")
+            m_info = gr.Markdown()
+            opt("التنقل بين الصفحات", "السابقة والتالية، أو اذهب لرقم صفحة، أو للصفحة التالية اللي فيها فقرات ما ترجمتها.",
+                "تصل لأي صفحة بسرعة وما تفقد شي.", "اكتب رقم الصفحة واضغط «اذهب»، أو استخدم الأزرار.")
+            with gr.Row():
+                b_prev = gr.Button("◀ السابقة")
+                m_page = gr.Number(1, show_label=False, precision=0, minimum=1)
+                b_go = gr.Button("اذهب")
+                b_next = gr.Button("التالية ▶")
+                b_todo = gr.Button("أقرب صفحة ناقصة")
+            m_rows, m_en, m_ar = [], [], []
+            for i in range(SLOTS):
+                with gr.Row(visible=False) as _r:
+                    _ar = gr.Textbox(label="الترجمة العربية", lines=3, max_lines=14, interactive=True)
+                    _en = gr.Textbox(label="النص الإنجليزي", lines=3, max_lines=14, interactive=False, elem_classes="ltr")
+                m_rows.append(_r); m_en.append(_en); m_ar.append(_ar)
+            m_slots = [c for t in zip(m_rows, m_en, m_ar) for c in t]
+            with gr.Row():
+                b_msave = gr.Button("💾 حفظ هذي الصفحة")
+                b_mnext2 = gr.Button("حفظ والانتقال للتالية ▶")
+            step("ج", "شوف النتيجة وأدرجها في الملف")
+            opt("الخط العربي", "الخط اللي تُكتب فيه ترجمتك داخل الملف.",
+                "الحروف العربية ما تُكتب بنفس الخط الإنجليزي الأصلي، فالبرنامج يستخدم خطاً عربياً بنفس الحجم واللون ووزن الخط (عريض أو عادي) والمحاذاة.",
+                "الافتراضي Noto Naskh. لو تبي خطاً ثاني، ضع ملف الخط (ttf) داخل مجلد fonts واخترته هنا.")
+            m_font = gr.Dropdown(builder.list_fonts(), value="NotoNaskhArabic-Regular.ttf" if "NotoNaskhArabic-Regular.ttf" in builder.list_fonts() else None,
+                                 show_label=False, allow_custom_value=False)
+            opt("معاينة الصفحة", "يعرض الصفحة الحالية كما ستظهر في الملف النهائي بترجمتك.",
+                "تتأكد من الخط والمكان قبل ما تدرج الكل، وتاخذ أقل من ثانية.", "اضغط «معاينة هذي الصفحة».")
+            b_mprev = gr.Button("👁 معاينة هذي الصفحة")
+            m_img = gr.Image(show_label=False, type="filepath", interactive=False)
+            opt("تأكيد وإدراج الترجمة", "يحذف النص الإنجليزي من الفقرات اللي ترجمتها ويكتب ترجمتك مكانه بنفس التنسيق، ويطلع لك ملف PDF جديد.",
+                "الفقرات اللي ما ترجمتها تبقى بالإنجليزي، فتقدر تسلّم الملف على دفعات.", "اضغط الزر ثم نزّل الملف.")
+            b_mok = gr.Button("✅ تأكيد وإدراج الترجمة في الملف", variant="primary")
+            m_out = gr.File(show_label=False)
         # ============================================================ 3. REVIEW
         with gr.Tab("٣. المراجعة والتصدير") as tab_review:
             step("أ", "اختر الملف", "بعد ما تنتهي الترجمة يظهر الملف هنا للمراجعة قبل التصدير.")
@@ -615,6 +807,21 @@ with gr.Blocks(title="مترجم الروايات") as demo:
     b_auto.click(lambda k: key_action(k, "auto"), ksel, [kpanel, ksel, kmsg])
     b_role.click(lambda k, r: key_action(k, "role", r), [ksel, k_newrole], [kpanel, ksel, kmsg])
     b_testall.click(test_all, None, [kpanel, kmsg])
+    _open_outs = [m_pid, m_sel, m_msg, m_cur, m_page, m_info] + m_slots
+    _nav_outs = [m_cur, m_page, m_info] + m_slots
+    _nav_in = [m_pid, m_cur, m_page] + m_ar
+    b_mnew.click(manual_new, m_file, _open_outs, api_name="manual_new")
+    b_mopen.click(manual_open, m_sel, _open_outs, api_name="manual_open")
+    b_mdel.click(manual_delete, m_pid, [m_sel, m_msg])
+    b_prev.click(lambda pid, cur, tp, *a: manual_nav(pid, cur, tp, "prev", *a), _nav_in, _nav_outs, api_name="manual_prev")
+    b_next.click(lambda pid, cur, tp, *a: manual_nav(pid, cur, tp, "next", *a), _nav_in, _nav_outs, api_name="manual_next")
+    b_mnext2.click(lambda pid, cur, tp, *a: manual_nav(pid, cur, tp, "next", *a), _nav_in, _nav_outs)
+    b_go.click(lambda pid, cur, tp, *a: manual_nav(pid, cur, tp, "go", *a), _nav_in, _nav_outs, api_name="manual_go")
+    b_todo.click(lambda pid, cur, tp, *a: manual_nav(pid, cur, tp, "todo", *a), _nav_in, _nav_outs, api_name="manual_todo")
+    b_msave.click(manual_save, [m_pid, m_cur] + m_ar, m_msg, api_name="manual_save")
+    b_mprev.click(manual_preview, [m_pid, m_cur, m_font] + m_ar, [m_img, m_msg], api_name="manual_preview")
+    b_mok.click(manual_confirm, [m_pid, m_cur, m_font] + m_ar, [m_out, m_msg], api_name="manual_confirm")
+    demo.load(lambda: gr.update(choices=_mp_choices()), None, m_sel)
     go.click(add_jobs, [files, src, tgt, style, golden, sens], [gmsg, jsel])
     b_resume.click(lambda j: job_action(j, "resume"), jsel, [jsel, jmsg])
     b_stop.click(lambda j: job_action(j, "stop"), jsel, [jsel, jmsg])
