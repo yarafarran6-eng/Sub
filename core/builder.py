@@ -10,6 +10,13 @@ def _rgb(c):
     return f"#{(c >> 16) & 255:02x}{(c >> 8) & 255:02x}{c & 255:02x}"
 
 
+def _hex_rgb(h):
+    h = (h or "#000000").lstrip("#")
+    if len(h) == 3:
+        h = "".join(c * 2 for c in h)
+    return tuple(int(h[k:k + 2], 16) / 255 for k in (0, 2, 4))
+
+
 def _bg(page, rect):
     import fitz
     try:
@@ -23,62 +30,217 @@ def _bg(page, rect):
         return (1, 1, 1)
 
 
+# ------------------------------------------------------------------ fonts
+DEFAULT_FAMILY = "Noto Naskh Arabic"
+_fonts_cache = {}
+_glyph_cache = {}
+
+
+def _font(name):
+    import fitz
+    if name not in _fonts_cache:
+        _fonts_cache[name] = fitz.Font(fontfile=str(FONTS / name))
+    return _fonts_cache[name]
+
+
+def _pretty(stem):
+    return re.sub(r"(?<!^)(?=[A-Z])", " ", stem)
+
+
+def font_families():
+    """{display name: (regular file, bold file)} for every font in fonts/ that has Arabic letters."""
+    fams = {}
+    for f in sorted(FONTS.glob("*-Regular.ttf")):
+        stem = f.name[:-len("-Regular.ttf")]
+        try:
+            if not _font(f.name).has_glyph(0x627):
+                continue
+        except Exception:
+            continue
+        bold = FONTS / f"{stem}-Bold.ttf"
+        fams[_pretty(stem)] = (f.name, bold.name if bold.exists() else f.name)
+    return fams
+
+
 def list_fonts():
-    return sorted(f.name for f in FONTS.glob("*") if f.suffix.lower() in (".ttf", ".otf"))
+    return list(font_families())
+
+
+def _has(font_name, ch):
+    k = (font_name, ch)
+    if k not in _glyph_cache:
+        _glyph_cache[k] = bool(_font(font_name).has_glyph(ord(ch)))
+    return _glyph_cache[k]
+
+
+def _rich_text(text, font_name):
+    """Escapes the text. Characters the Arabic font does not have (Latin letters, many symbols) go in a fallback-font span."""
+    out, buf, fb = [], [], False
+
+    def flush():
+        if buf:
+            t = html.escape("".join(buf))
+            out.append(f"<span class='fb'>{t}</span>" if fb else t)
+            buf.clear()
+
+    for ch in text:
+        if ch == "\n":
+            flush()
+            out.append("<br>")
+            continue
+        if ch.isspace():
+            buf.append(ch)
+            continue
+        need = not _has(font_name, ch)
+        if need != fb:
+            flush()
+            fb = need
+        buf.append(ch)
+    flush()
+    return "".join(out)
 
 
 def _font_css(tgt, font=None):
-    faces = ""
-    if font and (FONTS / font).exists():
-        faces = f"@font-face{{font-family:'SubFont';src:url('{font}');}}@font-face{{font-family:'SubFont';font-weight:bold;src:url('{font}');}}"
-        fam = "'SubFont'"
-    elif tgt == "ar":
-        faces = ("@font-face{font-family:'SubFont';src:url('NotoNaskhArabic-Regular.ttf');}"
-                 "@font-face{font-family:'SubFont';font-weight:bold;src:url('NotoNaskhArabic-Bold.ttf');}")
-        fam = "'SubFont'"
-    elif tgt == "ja" and (FONTS / "NotoSansJP-Regular.ttf").exists():
-        faces = "@font-face{font-family:'SubFont';src:url('NotoSansJP-Regular.ttf');}"
-        fam = "'SubFont'"
+    """Kept for the automatic pipeline: one Arabic font for everything."""
+    if tgt == "ar":
+        fams = font_families()
+        reg, bold = fams.get(font or DEFAULT_FAMILY) or fams.get(DEFAULT_FAMILY) or ("NotoNaskhArabic-Regular.ttf", "NotoNaskhArabic-Bold.ttf")
+        return reg, bold
+    return None, None
+
+
+# ------------------------------------------------------------------ backgrounds
+def _gradient_png(c1, c2, direction):
+    import io
+    from PIL import Image
+    a, b = [tuple(int(v * 255) for v in _hex_rgb(c)) for c in (c1, c2)]
+    n = 128
+    img = Image.new("RGB", (n, n))
+    px = img.load()
+    for y in range(n):
+        for x in range(n):
+            t = {"vertical": y / (n - 1), "horizontal": x / (n - 1)}.get(direction, (x + y) / (2 * (n - 1)))
+            px[x, y] = tuple(int(a[k] + (b[k] - a[k]) * t) for k in range(3))
+    buf = io.BytesIO()
+    img.save(buf, "PNG")
+    return buf.getvalue()
+
+
+def _draw_background(page, bg):
+    if not bg or not bg.get("mode") or bg["mode"] == "none":
+        return False
+    if bg["mode"] == "solid":
+        page.draw_rect(page.rect, color=None, fill=_hex_rgb(bg.get("c1")), overlay=False)
     else:
-        fam = "sans-serif"
-    return faces, fam
+        page.insert_image(page.rect, stream=_gradient_png(bg.get("c1", "#ffffff"), bg.get("c2", "#cccccc"),
+                                                          bg.get("dir", "vertical")), overlay=False, keep_proportion=False)
+    return True
 
 
-def _apply_page(doc, pno, us, obstacles, tgt, faces, fam, arch):
+# ------------------------------------------------------------------ one page
+def _fit(page, rect, body, css, arch, ymax):
+    """Writes the text into the box; grows the box downwards a little before it ever shrinks the text."""
+    h0 = rect.height
+    last = rect
+    for grow in (1.0, 1.15, 1.35):
+        r = fitz_rect(rect.x0, rect.y0, rect.x1, max(rect.y1, min(ymax, rect.y0 + h0 * grow)))
+        last = r
+        spare, scale = page.insert_htmlbox(r, body, css=css, archive=arch, scale_low=0.92)
+        if spare >= 0:
+            return r, spare, scale
+    spare, scale = page.insert_htmlbox(last, body, css=css, archive=arch, scale_low=0.5)
+    return last, spare, scale
+
+
+def fitz_rect(*a):
+    import fitz
+    return fitz.Rect(*a)
+
+
+def _apply_page(doc, pno, us, obstacles, tgt, default_family=None, bg=None):
     """Replaces the original text of the given paragraphs on one page. Returns how many were shrunk to fit."""
     import fitz
     rtl = tgt in RTL
     page = doc[pno]
     W = page.rect.width
     shrunk = 0
+    arch = fitz.Archive(str(FONTS)) if FONTS.exists() else None
+    has_bg = _draw_background(page, bg)
+    fams = font_families() if tgt == "ar" else {}
+    dflt = fams.get(default_family or DEFAULT_FAMILY) or fams.get(DEFAULT_FAMILY) or ("NotoNaskhArabic-Regular.ttf", "NotoNaskhArabic-Bold.ttf")
     for u in us:
+        if u.get("custom"):                   # an added paragraph has no original text to erase
+            continue
         r = fitz.Rect(u["bbox"])
-        page.add_redact_annot(r, fill=_bg(page, r))
+        page.add_redact_annot(r, fill=False if has_bg else _bg(page, r))
     try:
         page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE, graphics=fitz.PDF_REDACT_LINE_ART_NONE)
     except Exception:
         page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE)
+    # the text column of the page (used to put short continuation lines back at the margin)
+    longs = [v for v in obstacles if v.get("text") and len(v["text"]) > 100 and v.get("bbox")]
+    col = (min(v["bbox"][0] for v in longs), max(v["bbox"][2] for v in longs)) if longs else None
+    scratch = None
     for u in us:
+        if u.get("remove") or not u.get("tr"):    # removed paragraphs are only erased, never rewritten
+            continue
         x0, y0, x1, y1 = u["bbox"]
-        limit = page.rect.y1 - 24            # let the block grow downwards into free space before shrinking the text
+        h0 = y1 - y0
+        size0 = u["size"]
+        limit = page.rect.y1 - 24            # free space below this block (down to the next block)
         for v in obstacles:
             if v is not u and v["bbox"][1] >= y1 - 1 and v["bbox"][0] < x1 and v["bbox"][2] > x0:
                 limit = min(limit, v["bbox"][1] - 3)
-        y1 = max(y1, limit)
+        ymax = max(limit, y0 + h0 * 1.35)
+        if (col and h0 < size0 * 2.4 and (x1 - x0) < 0.6 * (col[1] - col[0]) and abs(x0 - col[0]) < 0.2 * (col[1] - col[0])
+                and u.get("align", "left") == "left"):
+            x0, x1 = col                      # a short line that starts at the margin: use the whole column
         if rtl and u.get("align") != "center":
             x0, x1 = W - x1, W - x0                      # mirror for right-to-left reading
-        rect = fitz.Rect(x0, y0, x1, y1)
+        dx, dy = float(u.get("dx") or 0), float(u.get("dy") or 0)
+        rect = fitz.Rect(x0 + dx, y0 + dy, x1 + dx, max(y1, min(limit, ymax)) + dy)
+        ymax += dy
         a = u.get("align", "left")
         align = {"left": "right", "right": "left", "center": "center"}[a] if rtl else a
-        size = u["size"] * (1.04 if rtl else 1.0)
-        css = (faces + f"body{{font-family:{fam};font-size:{size}pt;color:{_rgb(u.get('color', 0))};"
-               f"text-align:{align};direction:{'rtl' if rtl else 'ltr'};margin:0;"
-               f"font-weight:{'bold' if u.get('bold') else 'normal'};line-height:1.35;}}")
-        body = "<p style='margin:0'>" + html.escape(u["tr"]).replace("\n", "<br>") + "</p>"
-        spare, scale = page.insert_htmlbox(rect, body, css=css, archive=arch, scale_low=0.5)
+        if u.get("size_abs"):
+            size = float(u["size_abs"])
+        else:
+            size = size0 * (1.04 if rtl else 1.0) * float(u.get("size_scale", 1.0))
+        color = u.get("tcolor") or _rgb(u.get("color", 0))
+        fam = fams.get(u.get("font")) or dflt if tgt == "ar" else None
+        weight = "bold" if u.get("bold") else "normal"
+        if tgt == "ar":
+            reg, bold = fam
+            faces = (f"@font-face{{font-family:'AR';src:url('{reg}');}}@font-face{{font-family:'AR';font-weight:bold;src:url('{bold}');}}"
+                     "@font-face{font-family:'LAT';src:url('NotoSans-Regular.ttf');}"
+                     "@font-face{font-family:'LAT';font-weight:bold;src:url('NotoSans-Bold.ttf');}.fb{font-family:'LAT';}")
+            family = "'AR'"
+            body = "<p style='margin:0'>" + _rich_text(u["tr"], reg) + "</p>"
+        else:
+            faces, family = "", "sans-serif"
+            body = "<p style='margin:0'>" + html.escape(u["tr"]).replace("\n", "<br>") + "</p>"
+        css = (faces + f"body{{font-family:{family};font-size:{size}pt;color:{color};text-align:{align};"
+               f"direction:{'rtl' if rtl else 'ltr'};margin:0;font-weight:{weight};line-height:1.3;}}")
+        if u.get("hl"):                       # a coloured box around the text: measure the real text height first
+            if scratch is None:
+                scratch = fitz.open()
+                scratch.new_page(width=page.rect.width, height=page.rect.height)
+            sp, _ = _fit(scratch[0], rect, body, css, arch, ymax)[1:]
+            used = fitz.Rect(rect.x0, rect.y0, rect.x1, rect.y0 + max(size * 1.3, _fit_height(rect, sp)))
+            scratch[0].clean_contents()
+            pad = 2.5
+            page.draw_rect(fitz.Rect(used.x0 - pad, used.y0 - pad, used.x1 + pad, used.y1 + pad), color=None,
+                           fill=_hex_rgb(u["hl"]), overlay=True)
+        r_used, spare, scale = _fit(page, rect, body, css, arch, ymax)
         if scale and scale < 1:
             shrunk += 1
+    if scratch is not None:
+        scratch.close()
     return shrunk
+
+
+def _fit_height(rect, spare):
+    return max(0.0, rect.height - max(spare, 0))
 
 
 def _units_by_page(units):
@@ -86,33 +248,69 @@ def _units_by_page(units):
     for u in units:
         if u.get("bbox"):
             all_on_page.setdefault(u["page"], []).append(u)
-        if u["kind"] == "text" and u.get("translate") and u.get("tr"):
+        if u["kind"] == "text" and u.get("translate") and (u.get("tr") or u.get("remove")):
             by_page.setdefault(u["page"], []).append(u)
     return by_page, all_on_page
 
 
-def build_pdf(src_pdf, units, tgt, out_path, font=None):
+def build_pdf(src_pdf, units, tgt, out_path, font=None, page_styles=None):
     import fitz
     doc = fitz.open(src_pdf)
-    faces, fam = _font_css(tgt, font)
-    arch = fitz.Archive(str(FONTS)) if FONTS.exists() else None
     by_page, all_on_page = _units_by_page(units)
-    shrunk = sum(_apply_page(doc, pno, us, all_on_page.get(pno, []), tgt, faces, fam, arch) for pno, us in by_page.items())
+    bgs = {int(p): (st or {}).get("bg") for p, st in (page_styles or {}).items() if (st or {}).get("bg")}
+    shrunk = 0
+    for pno in sorted(set(by_page) | set(bgs)):
+        shrunk += _apply_page(doc, pno, by_page.get(pno, []), all_on_page.get(pno, []), tgt, font, bgs.get(pno))
     doc.subset_fonts()
     doc.save(out_path, garbage=3, deflate=True)
     doc.close()
     return {"pages": len(by_page), "shrunk_blocks": shrunk}
 
 
-def preview_page(src_pdf, units, tgt, pno, out_png, font=None, dpi=100):
+def build_plan_pdf(src_pdf, entries, units, tgt, out_path=None, font=None, page_styles=None, base_dir=None, only_pos=None, png=None, dpi=100):
+    """Builds the output from the page plan: original pages, imported pages, blank pages, in the chosen order.
+    only_pos: build just that one page (fast preview), and write a PNG instead of a PDF when png is given."""
+    import fitz
+    from pathlib import Path as _P
+    src, out = fitz.open(src_pdf), fitz.open()
+    by_page, all_on_page = _units_by_page(units)
+    todo, last_size = [], (595, 842)
+    positions = [only_pos] if only_pos is not None else range(len(entries))
+    for pos in positions:
+        e = entries[pos]
+        if e["k"] == "o":
+            out.insert_pdf(src, from_page=e["p"], to_page=e["p"])
+            last_size = (out[-1].rect.width, out[-1].rect.height)
+            if e.get("tr_on"):
+                todo.append((len(out) - 1, e["p"]))
+        elif e["k"] == "e":
+            ex = fitz.open(str(_P(base_dir) / e["f"]))
+            out.insert_pdf(ex, from_page=0, to_page=0)
+            last_size = (out[-1].rect.width, out[-1].rect.height)
+        else:
+            out.new_page(width=last_size[0], height=last_size[1])
+    shrunk = 0
+    for idx, p in todo:
+        bg = ((page_styles or {}).get(str(p)) or {}).get("bg")
+        shrunk += _apply_page(out, idx, by_page.get(p, []), all_on_page.get(p, []), tgt, font, bg)
+    info = {"pages": len(out), "shrunk_blocks": shrunk}
+    if png:
+        out[0].get_pixmap(dpi=dpi).save(png)
+    else:
+        out.subset_fonts()
+        out.save(out_path, garbage=3, deflate=True)
+    out.close()
+    return info
+
+
+def preview_page(src_pdf, units, tgt, pno, out_png, font=None, dpi=100, page_styles=None):
     """Renders ONE page exactly as it will look in the final file (fast: only this page is processed)."""
     import fitz
     doc = fitz.open(src_pdf)
-    faces, fam = _font_css(tgt, font)
-    arch = fitz.Archive(str(FONTS)) if FONTS.exists() else None
     by_page, all_on_page = _units_by_page(units)
-    if pno in by_page:
-        _apply_page(doc, pno, by_page[pno], all_on_page.get(pno, []), tgt, faces, fam, arch)
+    bg = ((page_styles or {}).get(pno) or (page_styles or {}).get(str(pno)) or {}).get("bg")
+    if pno in by_page or bg:
+        _apply_page(doc, pno, by_page.get(pno, []), all_on_page.get(pno, []), tgt, font, bg)
     doc[pno].get_pixmap(dpi=dpi).save(out_png)
     doc.close()
 
