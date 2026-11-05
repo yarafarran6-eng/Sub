@@ -44,7 +44,22 @@ def _font(name):
 
 
 def _pretty(stem):
-    return re.sub(r"(?<!^)(?=[A-Z])", " ", stem)
+    return re.sub(r"(?<=[a-z])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])", " ", stem)
+
+
+STYLE_AR = {
+    "Noto Naskh Arabic": "نسخ", "Amiri": "نسخ كلاسيكي للكتب", "Amiri Quran": "نسخ مصحف", "Scheherazade New": "نسخ واضح للقراءة",
+    "Lateef": "نسخ خفيف", "Harmattan": "نسخ حديث", "Noto Kufi Arabic": "كوفي", "Noto Sans Arabic": "حديث بسيط",
+    "IBM Plex Sans Arabic": "حديث تقني", "Tajawal": "حديث عصري", "Almarai": "حديث مريح", "Zain": "حديث خفيف",
+    "Aref Ruqaa": "رقعة", "Aref Ruqaa Ink": "رقعة بالحبر", "Noto Nastaliq Urdu": "نستعليق", "Mirza": "خط يدوي",
+    "Katibeh": "خط كاتب يدوي", "Rakkas": "عناوين عريضة", "Lalezar": "عناوين سميكة", "Jomhuria": "عناوين ضيقة",
+    "Vibes": "زخرفي", "Blaka": "زخرفي ثقيل", "Blaka Ink": "زخرفي بالحبر", "Blaka Hollow": "زخرفي مفرّغ",
+}
+
+
+def font_labels():
+    """[(label shown in the lists, family name)] with the writing style in Arabic."""
+    return [(f"{n} · {STYLE_AR[n]}" if n in STYLE_AR else n, n) for n in font_families()]
 
 
 def font_families():
@@ -202,6 +217,8 @@ def _apply_page(doc, pno, us, obstacles, tgt, default_family=None, bg=None):
         ymax += dy
         a = u.get("align", "left")
         align = {"left": "right", "right": "left", "center": "center"}[a] if rtl else a
+        if u.get("align_ov") in ("right", "left", "center", "justify"):      # an alignment you chose yourself
+            align = u["align_ov"]
         if u.get("size_abs"):
             size = float(u["size_abs"])
         else:
@@ -265,6 +282,31 @@ def build_pdf(src_pdf, units, tgt, out_path, font=None, page_styles=None):
     doc.save(out_path, garbage=3, deflate=True)
     doc.close()
     return {"pages": len(by_page), "shrunk_blocks": shrunk}
+
+
+def crop_png(src_pdf, pno, bbox, dpi=200, margin=4):
+    import fitz
+    doc = fitz.open(src_pdf)
+    page = doc[pno]
+    r = fitz.Rect(bbox[0] - margin, bbox[1] - margin, bbox[2] + margin, bbox[3] + margin) & page.rect
+    data = page.get_pixmap(clip=r, dpi=dpi).tobytes("png")
+    doc.close()
+    return data
+
+
+def render_original(src_pdf, pno, boxes, out_png, dpi=90):
+    """The ORIGINAL page as a picture, with a numbered red box around every paragraph (numbers match the editor)."""
+    import fitz
+    doc = fitz.open(src_pdf)
+    page = doc[pno]
+    for n, bb in boxes:
+        r = fitz.Rect(bb)
+        page.draw_rect(r, color=(0.85, 0, 0), width=0.8)
+        top = r.y0 - 9 if r.y0 > 10 else r.y0
+        page.draw_rect(fitz.Rect(r.x0, top, r.x0 + 8 + 4.2 * len(str(n)), top + 9), color=None, fill=(0.85, 0, 0))
+        page.insert_text((r.x0 + 2, top + 7.5), str(n), fontsize=7.5, color=(1, 1, 1))
+    page.get_pixmap(dpi=dpi).save(out_png)
+    doc.close()
 
 
 def build_plan_pdf(src_pdf, entries, units, tgt, out_path=None, font=None, page_styles=None, base_dir=None, only_pos=None, png=None, dpi=100):

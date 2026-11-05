@@ -3,7 +3,7 @@ paragraph styles and a full undo history. Everything is saved to disk after ever
 import copy, re, shutil, time, uuid
 from pathlib import Path
 from threading import RLock
-from . import parser
+from . import parser, textcheck
 from .config import DATA, read_json, write_json
 
 ROOT = DATA / "manual"
@@ -121,7 +121,7 @@ def import_from_job(job_id):
 def new_draft_dict(name, pages):
     now = int(time.time())
     return {"id": uuid.uuid4().hex[:6], "name": name, "created": now, "updated": now, "page": 0, "grp": 0,
-            "tr": {}, "ustyle": {}, "pstyle": {}, "deleted": {}, "extra": {},
+            "tr": {}, "src": {}, "ustyle": {}, "pstyle": {}, "deleted": {}, "extra": {},
             "plan": [{"k": "o", "p": i} for i in range(pages)],
             "range": {"on": False, "a": 1, "b": max(pages, 1), "outside": "keep"}, "ctx": "", "style": "", "hist": []}
 
@@ -268,7 +268,7 @@ def reset_all(d):
     orig = max([e["p"] for e in d["plan"] if e["k"] == "o"] + [-1]) + 1
     fresh = new_draft_dict(d["name"], max(orig, 1))
     tx = Tx(d, "إعادة تعيين الكل")
-    for k in ("tr", "ustyle", "pstyle", "deleted", "extra", "plan", "range"):
+    for k in ("tr", "src", "ustyle", "pstyle", "deleted", "extra", "plan", "range"):
         tx.set(k, value=fresh[k])
     return tx.commit()
 
@@ -401,6 +401,14 @@ def toggle_deleted(d, uid):
     return tx.commit(), (not cur)
 
 
+def set_src(d, uid, text):
+    """The text of a paragraph read from its picture (when the file's own text is unreadable)."""
+    text = (text or "").strip()
+    tx = Tx(d, "قراءة نص من الصورة")
+    tx.set("src", uid, value=text if text else MISSING)
+    return tx.commit()
+
+
 def set_text(d, uid, text):
     text = (text or "").strip()
     tx = Tx(d, "تعديل نص")
@@ -408,7 +416,7 @@ def set_text(d, uid, text):
     return tx.commit()
 
 
-STYLE_KEYS = ("font", "size", "tcolor", "hl", "dx", "dy")
+STYLE_KEYS = ("font", "size", "tcolor", "hl", "dx", "dy", "align")
 
 
 def set_ustyle(d, uid, **kw):
@@ -425,7 +433,7 @@ def reset_ustyle(d, uid, keys=STYLE_KEYS):
     return tx.commit()
 
 
-PSTYLE_KEYS = ("font", "scale", "tcolor", "hl", "bg")
+PSTYLE_KEYS = ("font", "scale", "tcolor", "hl", "bg", "dx", "dy", "align")
 
 
 def set_pstyle(d, page, **kw):
@@ -461,11 +469,14 @@ def page_items(units, d, orig_page):
     def view(u):
         st = d["ustyle"].get(u["id"], {})
         ps = d["pstyle"].get(str(orig_page), {})
-        return {"uid": u["id"], "custom": bool(u.get("custom")), "en": u["text"], "ar": d["tr"].get(u["id"], ""),
+        src = (d.get("src") or {}).get(u["id"])
+        return {"uid": u["id"], "custom": bool(u.get("custom")), "en": src or u["text"], "has_src": bool(src),
+                "garbled": (not src) and (not u.get("custom")) and textcheck.garbled(u["text"]), "bbox": u["bbox"],
+                "ar": d["tr"].get(u["id"], ""),
                 "deleted": bool(d["deleted"].get(u["id"])), "def_size": round(u["size"], 1),
                 "def_color": "#%02x%02x%02x" % ((u.get("color", 0) >> 16) & 255, (u.get("color", 0) >> 8) & 255, u.get("color", 0) & 255),
                 "font": st.get("font", ""), "size": st.get("size", 0), "tcolor": st.get("tcolor", ""), "hl": st.get("hl", ""),
-                "dx": st.get("dx", 0), "dy": st.get("dy", 0), "page_font": ps.get("font", "")}
+                "dx": st.get("dx", 0), "dy": st.get("dy", 0), "align": st.get("align", ""), "page_font": ps.get("font", "")}
 
     for x in [e for e in extras if not e.get("after")]:
         items.append(view(x))
@@ -502,7 +513,10 @@ def merged_units(units, d):
             c["tcolor"] = us.get("tcolor") or ps.get("tcolor")
         if us.get("hl") or ps.get("hl"):
             c["hl"] = us.get("hl") or ps.get("hl")
-        c["dx"], c["dy"] = us.get("dx", 0), us.get("dy", 0)
+        c["dx"] = float(us.get("dx", 0) or 0) + float(ps.get("dx", 0) or 0)     # the page's shift + the paragraph's own shift
+        c["dy"] = float(us.get("dy", 0) or 0) + float(ps.get("dy", 0) or 0)
+        if us.get("align") or ps.get("align"):
+            c["align_ov"] = us.get("align") or ps.get("align")
         out.append(c)
     return out
 

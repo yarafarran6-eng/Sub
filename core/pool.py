@@ -211,6 +211,9 @@ def call(messages, role="translate", max_tokens=4096, temperature=0.3, task="tra
             if meta is not None:
                 meta.update(key_id=k["id"], name=kname(k), model=k.get("model", ""))
             return text
+        except llm.BadRequest as e:
+            e.key_id = k["id"]
+            raise
         except llm.RateLimited as e:          # rate limits never count as failures: wait and switch key
             POOL.cooldown(k, e.retry_after, e.reason, e.detail)
         except llm.KeyDead as e:

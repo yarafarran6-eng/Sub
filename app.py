@@ -371,7 +371,7 @@ footer{display:none!important}
 textarea,input[type=text]{unicode-bidi:plaintext;border-radius:10px!important}
 .ltr textarea{direction:ltr;text-align:left}
 .arbox textarea{direction:rtl!important;unicode-bidi:normal!important;text-align:right!important}
-.enbox textarea{direction:ltr!important;unicode-bidi:normal!important;text-align:left!important}
+.enbox textarea{direction:ltr!important;unicode-bidi:plaintext!important;text-align:start!important}
 .hero{display:flex;flex-wrap:wrap;gap:14px;justify-content:space-between;align-items:center;padding:22px 24px;border-radius:18px;
  background:linear-gradient(135deg,#4338ca,#7c3aed);color:#fff;margin-bottom:10px}
 .hero h1{margin:0;font-size:1.7em;color:#fff}.hero p{margin:6px 0 0;opacity:.9}

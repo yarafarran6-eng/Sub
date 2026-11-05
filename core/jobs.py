@@ -1,7 +1,7 @@
 """Job queue: each uploaded file is a job processed in the background; resumable, with live statistics."""
 import queue, shutil, threading, time, traceback, uuid
 from pathlib import Path
-from . import parser, translator, editor, glossary
+from . import parser, translator, editor, glossary, textcheck
 from .config import JOBS, LOCK, read_json, write_json
 from .pool import POOL, NoKeys, Stopped
 
@@ -145,6 +145,13 @@ def _process(jid):
                         "هذي الصفحات تبقى كما هي في الـ PDF ولا تُترجم.")
                 if n_img > info["pages"] * 0.5:
                     note += " ⚠ أغلب الملف صور ممسوحة، والترجمة تحتاج قراءة النص من الصور (OCR) وهذا غير مدعوم حالياً."
+            bad = [u for u in units if u.get("translate") and textcheck.garbled(u["text"])]
+            for u in bad:
+                u["translate"] = False
+            if bad:
+                note += (f" ⚠ {len(bad)} فقرة نصها غير مقروء (ترميز خط الملف) وتُركت بدون ترجمة آلية. "
+                         "افتح الملف في «✍ ترجمة يدوية» لقراءتها من الصورة.")
+                save_units(jid, units)
             set_state(jid, kind=kind, pages=info["pages"], msg=note)
         meta, _ = load(jid)
         kind_word = "صفحة" if meta.get("kind") == "pdf" else "فصل"

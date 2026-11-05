@@ -2,13 +2,16 @@
 import os, time
 from pathlib import Path
 import gradio as gr
-from core import builder, jobs, manual, manual_ai
+from concurrent.futures import ThreadPoolExecutor
+from core import builder, jobs, manual, manual_ai, textcheck
 from core.pool import NoKeys
 
-SLOTS = 16
+SLOTS = 12
 HL_DEFAULT = "#fff2a8"
 PASTE_JS = (Path(__file__).parent / "core" / "paste.js").read_text(encoding="utf-8")
 _guard = lambda: None
+GARBLED_MSG = ("⚠ نص هذه الفقرة غير مقروء (ترميز خط الملف الأصلي). اقرأه من «صورة الصفحة الأصلية» تحت، "
+               "أو اضغط «👁 اقرأ من الصورة» ليقرأه الذكاء الاصطناعي (تُرسل صورة الفقرة للخدمة).")
 
 BG_PRESETS = {
     "بدون تغيير (الخلفية الأصلية)": ("none", "#ffffff", "#cccccc", "vertical"),
@@ -26,8 +29,12 @@ BG_PRESETS = {
 
 
 # ------------------------------------------------------------------ small helpers
+ALIGN_CHOICES = [("افتراضي (مثل الأصل)", ""), ("يمين", "right"), ("وسط", "center"), ("يسار", "left"), ("ضبط الجانبين", "justify")]
+_DELTA = {"left": (-1, 0), "right": (1, 0), "up": (0, -1), "down": (0, 1)}
+
+
 def _fonts():
-    return [("افتراضي", "")] + [(n, n) for n in builder.list_fonts()]
+    return [("افتراضي", "")] + builder.font_labels()
 
 
 def _proj_choices():
@@ -76,16 +83,33 @@ def _pstyle_vals(d, e):
     return [gr.update(value=ps.get("font", "")), gr.update(value=ps.get("scale", 100)), gr.update(value=bool(ps.get("tcolor"))),
             gr.update(value=ps.get("tcolor") or "#000000"), gr.update(value=bool(ps.get("hl"))), gr.update(value=ps.get("hl") or HL_DEFAULT),
             gr.update(value=bg.get("mode", "none")), gr.update(value=bg.get("c1", "#ffffff")), gr.update(value=bg.get("c2", "#cccccc")),
-            gr.update(value=bg.get("dir", "vertical"))]
+            gr.update(value=bg.get("dir", "vertical")), gr.update(value=ps.get("align", "")),
+            gr.update(value=ps.get("dx", 0) or 0), gr.update(value=ps.get("dy", 0) or 0)]
 
 
-NOSLOT = [gr.update(visible=False)] + [gr.update()] * 11
+NOSLOT = [gr.update(visible=False)] + [gr.update()] * 12
 
 
 def _empty(msg=""):
-    return (["", "", 0, 0, 1, msg, "", "افتح ملفاً أو ارفع ملفاً جديداً."] + NOSLOT * SLOTS + [gr.update()] * 10
+    return (["", "", 0, 0, 1, msg, "", "افتح ملفاً أو ارفع ملفاً جديداً."] + NOSLOT * SLOTS + [gr.update()] * 13
             + [gr.update()] * 4 + [[], gr.update(choices=_proj_choices(), value=None), gr.update(choices=[], value=None),
-                                   gr.update(choices=[], value=None), "", "", "", None, gr.update(visible=False), ""])
+                                   gr.update(choices=[], value=None), "", "", "", None, "", None, gr.update(visible=False), ""])
+
+
+def _orig_png(pid, eff, pos, items_all):
+    e = eff[pos] if eff and 0 <= pos < len(eff) else None
+    if not e or e["k"] == "b":
+        return None
+    out = str(manual._dir(pid) / "orig.png")
+    try:
+        if e["k"] == "o":
+            builder.render_original(manual.source_path(pid), e["p"],
+                                    [(n + 1, it["bbox"]) for n, it in enumerate(items_all) if not it["custom"]], out)
+        else:
+            builder.render_original(str(manual._dir(pid) / e["f"]), 0, [], out)
+    except Exception:
+        return None
+    return out
 
 
 def _view(pid, did, pos, grp, msg=""):
@@ -117,22 +141,23 @@ def _view(pid, did, pos, grp, msg=""):
             out += NOSLOT
             continue
         it, gi = items[i], grp * SLOTS + i + 1
+        shown = "(فقرة أضفتها أنت، لا يوجد نص أصلي)" if it["custom"] else (GARBLED_MSG if it["garbled"] else it["en"])
         out += [gr.update(visible=True),
-                gr.update(value="(فقرة أضفتها أنت، لا يوجد نص أصلي)" if it["custom"] else it["en"],
-                          label=f"النص الإنجليزي · فقرة {gi} · حجم الخط الأصلي {it['def_size']}"),
+                gr.update(value=shown, label=f"النص الأصلي · فقرة {gi} · حجم الخط الأصلي {it['def_size']}"
+                                             + (" · مقروء من الصورة" if it["has_src"] else "")),
                 gr.update(value=it["ar"], interactive=not it["deleted"],
                           label=f"الترجمة العربية · فقرة {gi}" + (" · 🗑 ستُحذف من الملف" if it["deleted"] else "")),
                 gr.update(value="↩ استعادة" if it["deleted"] else ("🗑 حذف الفقرة المضافة" if it["custom"] else "🗑 حذف الفقرة")),
                 gr.update(value=it["font"] or ""), gr.update(value=it["size"] or 0), gr.update(value=bool(it["tcolor"])),
                 gr.update(value=it["tcolor"] or it["def_color"]), gr.update(value=bool(it["hl"])), gr.update(value=it["hl"] or HL_DEFAULT),
-                gr.update(value=it["dx"] or 0), gr.update(value=it["dy"] or 0)]
+                gr.update(value=it["dx"] or 0), gr.update(value=it["dy"] or 0), gr.update(value=it["align"] or "")]
     out += _pstyle_vals(d, e)
     r = d["range"]
     out += [gr.update(value=r["on"]), gr.update(value=r["a"]), gr.update(value=r["b"]), gr.update(value=r["outside"])]
     out += [[[i + 1, _label(x), _status(x)] for i, x in enumerate(eff)],
             gr.update(choices=_proj_choices(), value=pid), gr.update(choices=_draft_choices(pid), value=did),
             gr.update(choices=_chap_choices(meta), value=None), d.get("ctx", ""), d.get("style", ""), gr.update(value=d.get("font", "")),
-            None, gr.update(visible=False), pager]
+            _orig_png(pid, eff, pos, items_all), pager, None, gr.update(visible=False), ""]
     return out
 
 
@@ -192,6 +217,10 @@ def h_new(file, progress=gr.Progress()):
     note = f"✅ استُخرج نص {meta['pages']} صفحة في {meta['extract_seconds']} ثانية. أُنشئت «مسودة 1» وتُحفظ تلقائياً."
     if meta["no_text_pages"]:
         note += f" {len(meta['no_text_pages'])} صفحة بدون نص قابل للقراءة."
+    bad = textcheck.share([u["text"] for u in units if u.get("translate")])
+    if bad > 0.15:
+        note += (f" ⚠ {round(bad * 100)}% من فقرات الملف نصها غير مقروء (ترميز خط الملف). تقدر تقرأها من صورة الصفحة "
+                 "الأصلية، أو بزر «👁 اقرأ من الصورة» (بالذكاء الاصطناعي).")
     return _view(pid, did, 0, 0, note)
 
 
@@ -389,6 +418,53 @@ def _ai(pid, did, items):
         raise gr.Error(str(e))
 
 
+def _ocr_items(pid, did, items):
+    """Reads the text of the given paragraphs from their pictures (4 at a time) and stores it in the draft."""
+    meta, units, d = _load_all(pid, did)
+    by = {u["id"]: u for u in units}
+    src = manual.source_path(pid)
+
+    def one(it):
+        u = by[it["uid"]]
+        return it["uid"], manual_ai.read_image(builder.crop_png(src, u["page"], u["bbox"]))
+
+    try:
+        with ThreadPoolExecutor(4) as ex:
+            results = list(ex.map(one, [i for i in items if i["uid"] in by]))
+    except NoKeys as e:
+        raise gr.Error(str(e))
+    except Exception as e:
+        raise gr.Error(f"تعذرت القراءة من الصورة: {e}")
+    with manual._lock:
+        d = manual.load_draft(pid, did)
+        for uid, txt in results:
+            manual.set_src(d, uid, txt)
+        manual.save_draft(pid, d)
+    return len(results)
+
+
+def h_ocr_slot(pid, did, cur, grp, i):
+    _guard()
+    _need(pid)
+    meta, units, d, eff, allit, items = _items_now(pid, did, cur, grp)
+    if i >= len(items) or items[i]["custom"]:
+        raise gr.Error("هذي الفقرة ما لها نص أصلي")
+    _ocr_items(pid, did, [items[i]])
+    meta, units, d, eff, allit, items = _items_now(pid, did, cur, grp)
+    return gr.update(value=items[i]["en"], label=f"النص الأصلي · فقرة {grp * SLOTS + i + 1} · مقروء من الصورة"), "👁 قُرئ النص من الصورة. راجعه وتأكد منه."
+
+
+def h_ocr_page(pid, did, cur, grp):
+    _guard()
+    _need(pid)
+    meta, units, d, eff, allit, items = _items_now(pid, did, cur, grp)
+    bad = [x for x in allit if x["garbled"] and not x["custom"] and not x["deleted"]]
+    if not bad:
+        return _view(pid, did, cur, grp, "ما فيه فقرات غير مقروءة في هذي الصفحة.")
+    n = _ocr_items(pid, did, bad)
+    return _view(pid, did, cur, grp, f"👁 قُرئت {n} فقرة من الصورة. راجع النصوص قبل الترجمة.")
+
+
 def h_ai_slot(pid, did, cur, grp, i):
     _guard()
     _need(pid)
@@ -398,6 +474,10 @@ def h_ai_slot(pid, did, cur, grp, i):
     it = items[i]
     if it["custom"]:
         raise gr.Error("الفقرة المضافة ما لها نص أصلي تترجمه")
+    if it["garbled"]:                      # unreadable text: read it from the picture first
+        _ocr_items(pid, did, [it])
+        meta, units, d, eff, allit, items = _items_now(pid, did, cur, grp)
+        it = items[i]
     res = _ai(pid, did, [it])
     tr, flag = res.get(it["uid"], ("", ""))
     if not tr:
@@ -413,6 +493,10 @@ def h_ai_page(pid, did, cur, grp, keep_manual):
     _guard()
     _need(pid)
     meta, units, d, eff, allit, items = _items_now(pid, did, cur, grp)
+    bad = [x for x in allit if x["garbled"] and not x["custom"] and not x["deleted"]]
+    if bad:
+        _ocr_items(pid, did, bad)
+        meta, units, d, eff, allit, items = _items_now(pid, did, cur, grp)
     todo = [i for i in allit if not i["custom"] and not i["deleted"] and (not keep_manual or not i["ar"].strip())]
     if not todo:
         return _view(pid, did, cur, grp, "ما فيه فقرات تحتاج ترجمة في هذي الصفحة.")
@@ -488,7 +572,7 @@ def h_add_para(pid, did, cur, grp, after_n):
     return _view(pid, did, cur, grp, "➕ أُضيفت فقرة جديدة. اكتب نصها، وتقدر تحرّك مكانها من «تنسيق الفقرة».")
 
 
-def h_slot_style(pid, did, cur, grp, i, font, size, tOn, tc, hOn, hc, dx, dy):
+def h_slot_style(pid, did, cur, grp, i, font, size, tOn, tc, hOn, hc, dx, dy, align):
     if not pid:
         return ""
     with manual._lock:
@@ -496,12 +580,12 @@ def h_slot_style(pid, did, cur, grp, i, font, size, tOn, tc, hOn, hc, dx, dy):
         if i >= len(items):
             return ""
         manual.set_ustyle(d, items[i]["uid"], font=font or None, size=float(size or 0), tcolor=tc if tOn else None,
-                          hl=hc if hOn else None, dx=float(dx or 0), dy=float(dy or 0))
+                          hl=hc if hOn else None, dx=float(dx or 0), dy=float(dy or 0), align=align or None)
         manual.save_draft(pid, d)
     return f"🎨 حُفظ التنسيق {time.strftime('%H:%M:%S')}"
 
 
-_KEYMAP = {"font": ["font"], "size": ["size"], "tcolor": ["tcolor"], "hl": ["hl"], "pos": ["dx", "dy"]}
+_KEYMAP = {"font": ["font"], "size": ["size"], "tcolor": ["tcolor"], "hl": ["hl"], "pos": ["dx", "dy"], "align": ["align"]}
 
 
 def h_slot_reset(pid, did, cur, grp, i, which):
@@ -517,11 +601,27 @@ def h_slot_reset(pid, did, cur, grp, i, which):
     return [u(value="") if ch("font") else u(), u(value=0) if ch("size") else u(),
             u(value=False) if ch("tcolor") else u(), u(value=it["def_color"]) if ch("tcolor") else u(),
             u(value=False) if ch("hl") else u(), u(value=HL_DEFAULT) if ch("hl") else u(),
-            u(value=0) if ch("pos") else u(), u(value=0) if ch("pos") else u(), "↺ رجع للافتراضي."]
+            u(value=0) if ch("pos") else u(), u(value=0) if ch("pos") else u(), u(value="") if ch("align") else u(), "↺ رجع للافتراضي."]
+
+
+def h_slot_move(pid, did, cur, grp, i, dirn, step):
+    """Arrow buttons: shift the paragraph by `step` points left / right / up / down."""
+    _guard()
+    _need(pid)
+    st = float(step or 5)
+    with manual._lock:
+        meta, units, d, eff, allit, items = _items_now(pid, did, cur, grp)
+        uid = items[i]["uid"]
+        us = d["ustyle"].get(uid, {})
+        dx = round(float(us.get("dx", 0) or 0) + _DELTA[dirn][0] * st, 2)
+        dy = round(float(us.get("dy", 0) or 0) + _DELTA[dirn][1] * st, 2)
+        manual.set_ustyle(d, uid, dx=dx, dy=dy)
+        manual.save_draft(pid, d)
+    return gr.update(value=dx), gr.update(value=dy), f"⬌ الإزاحة الآن: أفقي {dx} ورأسي {dy} نقطة."
 
 
 # ------------------------------------------------------------------ page style / range / plan
-def h_page_style(pid, did, cur, font, scale, tOn, tc, hOn, hc, bgm, bgc1, bgc2, bgdir):
+def h_page_style(pid, did, cur, font, scale, tOn, tc, hOn, hc, bgm, bgc1, bgc2, bgdir, align, dx, dy):
     if not pid:
         return ""
     with manual._lock:
@@ -531,7 +631,8 @@ def h_page_style(pid, did, cur, font, scale, tOn, tc, hOn, hc, bgm, bgc1, bgc2, 
             return ""
         bg = {"mode": bgm, "c1": bgc1, "c2": bgc2, "dir": bgdir} if bgm and bgm != "none" else None
         manual.set_pstyle(d, p, font=font or None, scale=(float(scale) if scale and float(scale) != 100 else None),
-                          tcolor=tc if tOn else None, hl=hc if hOn else None, bg=bg)
+                          tcolor=tc if tOn else None, hl=hc if hOn else None, bg=bg,
+                          align=align or None, dx=float(dx or 0), dy=float(dy or 0))
         manual.save_draft(pid, d)
     return f"🎨 حُفظ تنسيق الصفحة {time.strftime('%H:%M:%S')}"
 
@@ -551,7 +652,7 @@ def h_bg_preset(pid, did, cur, name):
     return [u(value=mode), u(value=c1), u(value=c2), u(value=dr), "🎨 طُبقت الخلفية."]
 
 
-_PKEYS = {"font": ["font"], "scale": ["scale"], "tcolor": ["tcolor"], "hl": ["hl"], "bg": ["bg"]}
+_PKEYS = {"font": ["font"], "scale": ["scale"], "tcolor": ["tcolor"], "hl": ["hl"], "bg": ["bg"], "align": ["align"], "pos": ["dx", "dy"]}
 
 
 def h_page_reset(pid, did, cur, which):
@@ -572,7 +673,26 @@ def h_page_reset(pid, did, cur, which):
     return [u(value="") if ch("font") else u(), u(value=100) if ch("scale") else u(), u(value=False) if ch("tcolor") else u(),
             u(value="#000000") if ch("tcolor") else u(), u(value=False) if ch("hl") else u(), u(value=HL_DEFAULT) if ch("hl") else u(),
             u(value="none") if ch("bg") else u(), u(value="#ffffff") if ch("bg") else u(), u(value="#cccccc") if ch("bg") else u(),
-            u(value="vertical") if ch("bg") else u(), "↺ رجع للافتراضي."]
+            u(value="vertical") if ch("bg") else u(), u(value="") if ch("align") else u(),
+            u(value=0) if ch("pos") else u(), u(value=0) if ch("pos") else u(), "↺ رجع للافتراضي."]
+
+
+def h_page_move(pid, did, cur, dirn, step):
+    """Arrow buttons for the whole page: shift every paragraph of the page."""
+    _guard()
+    _need(pid)
+    st = float(step or 5)
+    with manual._lock:
+        d = manual.load_draft(pid, did)
+        p = _orig_page(d, cur)
+        if p is None:
+            raise gr.Error("التحريك متاح للصفحات الأصلية فقط")
+        ps = d["pstyle"].get(str(p), {})
+        dx = round(float(ps.get("dx", 0) or 0) + _DELTA[dirn][0] * st, 2)
+        dy = round(float(ps.get("dy", 0) or 0) + _DELTA[dirn][1] * st, 2)
+        manual.set_pstyle(d, p, dx=dx, dy=dy)
+        manual.save_draft(pid, d)
+    return gr.update(value=dx), gr.update(value=dy), f"⬌ إزاحة الصفحة كلها الآن: أفقي {dx} ورأسي {dy} نقطة."
 
 
 def h_page_reset_all(pid, did, cur, grp):
@@ -784,6 +904,10 @@ def build(guard, opt, step):
         b_next = gr.Button("التالية ▶", scale=1)
         b_todo = gr.Button("أقرب صفحة ناقصة", scale=1)
     m_info, m_note, m_pager = gr.Markdown(), gr.Markdown(), gr.Markdown()
+    with gr.Accordion("🖼 صورة الصفحة الأصلية (اقرأ منها لو النص غير مقروء)", open=False):
+        opt("صورة الصفحة الأصلية", "تعرض الصفحة الأصلية كصورة، وحول كل فقرة مربع أحمر برقمها (نفس رقم الفقرة في الخانات).",
+            "لو نص الملف تالف أو بلغة غير الإنجليزية وطلع رموزاً، تقرأ منها وتترجم بيدك.", "قارن أرقام المربعات بأرقام الفقرات تحت.")
+        m_orig = gr.Image(show_label=False, type="filepath", interactive=False)
     with gr.Accordion("🎨 تنسيق الصفحة كلها (خط، حجم، لون، تحديد، خلفية)", open=False):
         opt("تنسيق الصفحة", "يغيّر كل فقرات الصفحة دفعة واحدة. وتقدر بعدها تغيّر فقرة لوحدها وهي تغلب تنسيق الصفحة.",
             "تتحكم بالصفحة كلها بخطوة وحدة، ولكل خيار زر ↺ يرجعه للافتراضي.", "غيّر القيمة وتُحفظ لحظياً. الحجم نسبة مئوية من الحجم الأصلي (100 = كما هو).")
@@ -808,6 +932,18 @@ def build(guard, opt, step):
             bg_c2 = gr.ColorPicker("#cccccc", label="اللون الثاني (للتدرج)")
             bg_dir = gr.Dropdown([("عمودي", "vertical"), ("أفقي", "horizontal"), ("قطري", "diagonal")], value="vertical", label="اتجاه التدرج")
             bg_r = gr.Button("↺ الخلفية الأصلية")
+        opt("محاذاة وموضع الصفحة", "محاذاة النص (يمين، وسط، يسار، ضبط الجانبين) وتحريك كل فقرات الصفحة معاً بالأسهم أو بالأرقام.",
+            "تعدّل مكان النص كله بخطوة وحدة. وتقدر بعدها تحرك فقرة لوحدها.", "الإزاحة بالنقطة (72 نقطة = بوصة). الأسهم تحرك بمقدار «خطوة السهم»، أو اكتب الرقم مباشرة (أفقي: موجب = يمين، رأسي: موجب = تحت).")
+        with gr.Row():
+            p_align = gr.Dropdown(ALIGN_CHOICES, value="", label="محاذاة النص", scale=3)
+            p_align_r = gr.Button("↺", scale=1)
+        with gr.Row():
+            p_dx = gr.Number(0, label="إزاحة أفقية للصفحة (نقطة)")
+            p_dy = gr.Number(0, label="إزاحة رأسية للصفحة (نقطة)")
+            p_step = gr.Number(5, label="خطوة السهم")
+            p_pos_r = gr.Button("↺ المكان")
+        with gr.Row():
+            p_left, p_right, p_up, p_down = gr.Button("◀ يسار"), gr.Button("يمين ▶"), gr.Button("▲ فوق"), gr.Button("▼ تحت")
         b_page_all = gr.Button("⟲ إعادة تعيين كل تنسيق الصفحة (الصفحة + فقراتها + الخلفية)")
         opt("إضافة فقرة", "تضيف فقرة جديدة في الصفحة تحت الفقرة اللي تختار رقمها.", "تكتب نصاً ما كان موجوداً في الأصل.", "اكتب رقم الفقرة اللي بعدها (0 = بالأعلى) واضغط «إضافة». بعدها تحرك مكانها من تنسيق الفقرة.")
         with gr.Row():
@@ -821,20 +957,24 @@ def build(guard, opt, step):
         b_ctx = gr.Button("بناء المسرد من النص")
     opt("تنسيق وحذف الفقرات", "كل فقرة بجانبها: «🤖» يترجمها الذكاء، و«🔢» يرقّم أسطرها، و«🗑» يحذفها من الملف النهائي. وداخل «🎨 تنسيق الفقرة»: الخط والحجم واللون والتحديد وإزاحة المكان، ولكل خيار زر ↺ يرجعه للافتراضي.",
         "تتحكم بكل فقرة لوحدها وتقدر ترجع عن أي شي.", "ما تغيّره يُحفظ لحظياً. الحجم 0 = الحجم الأصلي.")
-    ars, slot_outs, slot_widgets = [], [], []
+    ars, ens, slot_outs, slot_w = [], [], [], []
     for i in range(SLOTS):
         with gr.Group(visible=False) as g:
             with gr.Row():
                 ar = gr.Textbox(label="الترجمة العربية", lines=3, max_lines=14, interactive=True, elem_classes="arbox", rtl=True, scale=3)
-                en = gr.Textbox(label="النص الإنجليزي", lines=3, max_lines=14, interactive=False, elem_classes="enbox", scale=3)
+                en = gr.Textbox(label="النص الأصلي", lines=3, max_lines=14, interactive=False, elem_classes="enbox", scale=3)
             with gr.Row():
-                ai_b, num_b, del_b = gr.Button("🤖 ترجم بالذكاء"), gr.Button("🔢 ترقيم الأسطر"), gr.Button("🗑 حذف الفقرة")
-            with gr.Accordion("🎨 تنسيق هذي الفقرة", open=False):
+                ai_b, ocr_b, num_b, del_b = (gr.Button("🤖 ترجم بالذكاء"), gr.Button("👁 اقرأ من الصورة"),
+                                             gr.Button("🔢 ترقيم الأسطر"), gr.Button("🗑 حذف الفقرة"))
+            with gr.Accordion("🎨 تنسيق وموضع هذي الفقرة", open=False):
                 with gr.Row():
-                    f_font = gr.Dropdown(_fonts(), value="", label="الخط", scale=3)
+                    f_font = gr.Dropdown(_fonts(), value="", label="الخط والأسلوب", scale=3)
                     f_font_r = gr.Button("↺", scale=1)
                     f_size = gr.Number(0, label="الحجم بالنقطة (0 = الأصلي)", scale=3)
                     f_size_r = gr.Button("↺", scale=1)
+                with gr.Row():
+                    f_align = gr.Dropdown(ALIGN_CHOICES, value="", label="محاذاة النص", scale=3)
+                    f_align_r = gr.Button("↺", scale=1)
                 with gr.Row():
                     f_tOn = gr.Checkbox(False, label="تغيير لون النص")
                     f_tc = gr.ColorPicker("#000000", label="لون النص")
@@ -845,17 +985,23 @@ def build(guard, opt, step):
                 with gr.Row():
                     f_dx = gr.Number(0, label="إزاحة أفقية (نقطة)")
                     f_dy = gr.Number(0, label="إزاحة رأسية (نقطة)")
+                    f_step = gr.Number(5, label="خطوة السهم")
+                with gr.Row():
+                    f_left, f_right, f_up, f_down = gr.Button("◀ يسار"), gr.Button("يمين ▶"), gr.Button("▲ فوق"), gr.Button("▼ تحت")
                     f_pos_r = gr.Button("↺ المكان")
                     f_all_r = gr.Button("⟲ إعادة تعيين كل تنسيق الفقرة")
         ars.append(ar)
-        slot_outs += [g, en, ar, del_b, f_font, f_size, f_tOn, f_tc, f_hOn, f_hc, f_dx, f_dy]
-        slot_widgets.append((ai_b, num_b, del_b, f_font, f_size, f_tOn, f_tc, f_hOn, f_hc, f_dx, f_dy,
-                             f_font_r, f_size_r, f_tc_r, f_hc_r, f_pos_r, f_all_r))
+        ens.append(en)
+        slot_outs += [g, en, ar, del_b, f_font, f_size, f_tOn, f_tc, f_hOn, f_hc, f_dx, f_dy, f_align]
+        slot_w.append(dict(ai=ai_b, ocr=ocr_b, num=num_b, de=del_b, font=f_font, size=f_size, tOn=f_tOn, tc=f_tc, hOn=f_hOn, hc=f_hc,
+                           dx=f_dx, dy=f_dy, align=f_align, step=f_step, r_font=f_font_r, r_size=f_size_r, r_align=f_align_r,
+                           r_tc=f_tc_r, r_hc=f_hc_r, r_pos=f_pos_r, r_all=f_all_r, left=f_left, right=f_right, up=f_up, down=f_down))
     with gr.Row():
         b_save = gr.Button("💾 حفظ هذي الصفحة")
         b_grp_prev, b_grp_next = gr.Button("◀ الفقرات السابقة"), gr.Button("الفقرات التالية ▶")
         ai_keep = gr.Checkbox(True, label="لا تستبدل الفقرات اللي كتبتها")
         b_ai_page = gr.Button("🤖 ترجم كل فقرات الصفحة بالذكاء")
+        b_ocr_page = gr.Button("👁 اقرأ النصوص غير المقروءة بالذكاء")
     step("هـ", "المعاينة والملف النهائي")
     opt("الخط الافتراضي للملف", "الخط العربي اللي يُستخدم لكل الفقرات إلا لو غيّرت خط صفحة أو فقرة.",
         "الحروف العربية تحتاج خطاً عربياً، وهذا يحدد شكله.", "اختر الخط. تقدر تضيف خطوطك بوضع ملف ttf في مجلد fonts باسم «Name-Regular.ttf» و«Name-Bold.ttf».")
@@ -873,8 +1019,8 @@ def build(guard, opt, step):
     m_out = gr.File(show_label=False)
 
     OUTS = ([m_pid, m_did, m_cur, m_grp, m_page, m_msg, m_info, m_note] + slot_outs
-            + [p_font, p_scale, p_tOn, p_tc, p_hOn, p_hc, bg_mode, bg_c1, bg_c2, bg_dir, r_on, r_a, r_b, r_out]
-            + [m_plan, m_sel, m_dsel, m_chap, m_ctx, m_style, m_font, m_pending, m_confirm, m_cq])
+            + [p_font, p_scale, p_tOn, p_tc, p_hOn, p_hc, bg_mode, bg_c1, bg_c2, bg_dir, p_align, p_dx, p_dy, r_on, r_a, r_b, r_out]
+            + [m_plan, m_sel, m_dsel, m_chap, m_ctx, m_style, m_font, m_orig, m_pager, m_pending, m_confirm, m_cq])
     S = [m_pid, m_did, m_cur, m_grp]
     NAV_IN = S + [m_page]
     # open / projects / drafts
@@ -908,32 +1054,38 @@ def build(guard, opt, step):
     b_ins.click(lambda pid, did, cur, grp, f, p, w: h_insert(pid, did, cur, grp, f, p, w, False), S + [ins_file, ins_page, ins_where], OUTS)
     b_blank.click(lambda pid, did, cur, grp, w: h_insert(pid, did, cur, grp, None, 1, w, True), S + [ins_where], OUTS)
     # page style
-    pst = [p_font, p_scale, p_tOn, p_tc, p_hOn, p_hc, bg_mode, bg_c1, bg_c2, bg_dir]
+    pst = [p_font, p_scale, p_tOn, p_tc, p_hOn, p_hc, bg_mode, bg_c1, bg_c2, bg_dir, p_align, p_dx, p_dy]
     for c in pst:
         c.input(h_page_style, [m_pid, m_did, m_cur] + pst, m_save)
     bg_preset.input(h_bg_preset, [m_pid, m_did, m_cur, bg_preset], [bg_mode, bg_c1, bg_c2, bg_dir, m_save])
-    for btn, w in ((p_font_r, "font"), (p_scale_r, "scale"), (p_tc_r, "tcolor"), (p_hc_r, "hl"), (bg_r, "bg")):
+    for btn, w in ((p_font_r, "font"), (p_scale_r, "scale"), (p_tc_r, "tcolor"), (p_hc_r, "hl"), (bg_r, "bg"), (p_align_r, "align"), (p_pos_r, "pos")):
         btn.click(lambda pid, did, cur, w=w: h_page_reset(pid, did, cur, w), [m_pid, m_did, m_cur], pst + [m_save])
+    for btn, dirn in ((p_left, "left"), (p_right, "right"), (p_up, "up"), (p_down, "down")):
+        btn.click(lambda pid, did, cur, step, dirn=dirn: h_page_move(pid, did, cur, dirn, step), [m_pid, m_did, m_cur, p_step], [p_dx, p_dy, m_save])
     b_page_all.click(h_page_reset_all, S, OUTS)
     b_add.click(h_add_para, S + [add_after], OUTS)
     # AI + defaults
     b_ai_page.click(h_ai_page, S + [ai_keep], OUTS)
+    b_ocr_page.click(h_ocr_page, S, OUTS)
     m_style.blur(h_ai_cfg, [m_pid, m_did, m_ctx, m_style], m_save)
     m_ctx.blur(h_ai_cfg, [m_pid, m_did, m_ctx, m_style], m_save)
     b_ctx.click(h_ai_ctx, [m_pid, m_did], [m_ctx, m_save])
     m_font.input(h_font, [m_pid, m_did, m_font], m_save)
     # slots
-    for i, (ai_b, num_b, del_b, f_font, f_size, f_tOn, f_tc, f_hOn, f_hc, f_dx, f_dy, r_font, r_size, r_tc, r_hc, r_pos, r_all) in enumerate(slot_widgets):
+    for i, w in enumerate(slot_w):
         ar = ars[i]
         ar.blur(lambda pid, did, cur, grp, t, i=i: h_blur(pid, did, cur, grp, t, i), S + [ar], m_save)
-        ai_b.click(lambda pid, did, cur, grp, i=i: h_ai_slot(pid, did, cur, grp, i), S, [ar, m_save])
-        num_b.click(lambda pid, did, cur, grp, t, i=i: h_num(pid, did, cur, grp, t, i), S + [ar], [ar, m_save])
-        del_b.click(lambda pid, did, cur, grp, i=i: h_slot_del(pid, did, cur, grp, i), S, OUTS)
-        ctr = [f_font, f_size, f_tOn, f_tc, f_hOn, f_hc, f_dx, f_dy]
+        w["ai"].click(lambda pid, did, cur, grp, i=i: h_ai_slot(pid, did, cur, grp, i), S, [ar, m_save])
+        w["ocr"].click(lambda pid, did, cur, grp, i=i: h_ocr_slot(pid, did, cur, grp, i), S, [ens[i], m_save])
+        w["num"].click(lambda pid, did, cur, grp, t, i=i: h_num(pid, did, cur, grp, t, i), S + [ar], [ar, m_save])
+        w["de"].click(lambda pid, did, cur, grp, i=i: h_slot_del(pid, did, cur, grp, i), S, OUTS)
+        ctr = [w[k] for k in ("font", "size", "tOn", "tc", "hOn", "hc", "dx", "dy", "align")]
         for c in ctr:
             c.input(lambda pid, did, cur, grp, *v, i=i: h_slot_style(pid, did, cur, grp, i, *v), S + ctr, m_save)
-        for btn, w in ((r_font, "font"), (r_size, "size"), (r_tc, "tcolor"), (r_hc, "hl"), (r_pos, "pos"), (r_all, "all")):
-            btn.click(lambda pid, did, cur, grp, i=i, w=w: h_slot_reset(pid, did, cur, grp, i, w), S, ctr + [m_save])
+        for key, which in (("r_font", "font"), ("r_size", "size"), ("r_align", "align"), ("r_tc", "tcolor"), ("r_hc", "hl"), ("r_pos", "pos"), ("r_all", "all")):
+            w[key].click(lambda pid, did, cur, grp, i=i, which=which: h_slot_reset(pid, did, cur, grp, i, which), S, ctr + [m_save])
+        for key in ("left", "right", "up", "down"):
+            w[key].click(lambda pid, did, cur, grp, step, i=i, key=key: h_slot_move(pid, did, cur, grp, i, key, step), S + [w["step"]], [w["dx"], w["dy"], m_save])
     # preview + final file
     PV = S + [m_pv]
     b_pv_cur.click(lambda pid, did, cur, grp, pv, *a: h_preview(pid, did, cur, grp, pv, "cur", *a), PV + ars, [m_img, m_pv, m_pvinfo, m_save])

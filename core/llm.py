@@ -86,6 +86,10 @@ def _mock(key, messages, task):
         _mock_n[key["key"]] = key_n
         if key_n <= 3 or key_n % 3 == 0:
             raise RateLimited(1.5, "minute", "mock limit")
+    if task == "ocr":
+        if key["key"].startswith("mock-novision"):
+            raise BadRequest("400: image input is not supported by this model")
+        return "Recognized text from the image"
     user = messages[-1]["content"]
     if task == "translate":
         out = []
