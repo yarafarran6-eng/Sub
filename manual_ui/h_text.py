@@ -32,7 +32,19 @@ def nav(pid, did, cur, grp, target, how, *ars):
         pos = next((i for i, e in enumerate(eff) if e["k"] == "o" and e["p"] >= pg), int(cur))
     else:
         pos = int(target or 1) - 1
-    return view(pid, did, pos, 0)
+    out = view(pid, did, pos, 0)
+    out.update(auto_preview(pid, did, pos))
+    return out
+
+
+def auto_preview(pid, did, pos):
+    """The picture of the page we just moved to, so translating and checking never needs an extra click."""
+    from .h_output import preview_png
+    try:
+        png, _, text = preview_png(pid, did, pos)
+        return R(pv_img=png, pv_info=text)
+    except Exception as e:
+        return R(pv_info=f"تعذرت المعاينة: {e}")
 
 
 @safe

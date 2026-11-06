@@ -38,13 +38,13 @@ def default_font(pid, did, font):
 
 
 @safe
-def preview(pid, did, cur, grp, pv, how, *ars):
+def preview(pid, did, cur, grp, *ars):
+    """Draws the current page again with what is typed now."""
     guard()
     need(pid)
     autosave(pid, did, cur, grp, ars)
-    base = int(cur) if pv is None or int(pv) < 0 or how == "cur" else int(pv)
-    png, pos, text = preview_png(pid, did, base + {"prev": -1, "next": 1}.get(how, 0))
-    return R(pv_img=png, pv=pos, pv_info=text)
+    png, pos, text = preview_png(pid, did, int(cur))
+    return R(pv_img=png, pv_info=text)
 
 
 @safe

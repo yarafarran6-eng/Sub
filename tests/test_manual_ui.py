@@ -19,15 +19,14 @@ assert o[C["s0_g"]]["visible"] and not o[C["s9_g"]]["visible"]
 # autosave + per-paragraph style, step-back and reset of ONE option
 h_text.blur(*S, "الفصل الأول", 0)
 assert list(manual.load_draft(pid, did)["tr"].values()) == ["الفصل الأول"]
-o = panel.pick_para(*S, 2); assert "الفقرة 2" in v(o, "p_title")
 uid = manual.page_items(manual.load(pid)[1], manual.load_draft(pid, did), 0)[1]["uid"]
 for kw in (dict(size=14), dict(size=16), dict(font="Amiri")):
     d = manual.load_draft(pid, did); manual.set_ustyle(d, uid, **kw); manual.save_draft(pid, d)
-o = panel.stepback(*S, "para", 2, "size"); assert manual.load_draft(pid, did)["ustyle"][uid] == {"size": 14, "font": "Amiri"}, manual.load_draft(pid, did)["ustyle"]
-o = panel.reset(*S, "para", 2, "size"); assert manual.load_draft(pid, did)["ustyle"][uid] == {"font": "Amiri"}
+o = panel.stepback(*S, "para", 2, "size", "s1_"); assert manual.load_draft(pid, did)["ustyle"][uid] == {"size": 14, "font": "Amiri"}, manual.load_draft(pid, did)["ustyle"]
+o = panel.reset(*S, "para", 2, "size", "s1_"); assert manual.load_draft(pid, did)["ustyle"][uid] == {"font": "Amiri"}
 o = panel.apply(*S, "page", 1, "Tajawal", 110, "center", True, "#222222", False, "#fff2a8", 3, 0, "gradient", "#ffffff", "#000000", "vertical")
 assert manual.load_draft(pid, did)["pstyle"]["0"]["scale"] == 110
-panel.move(*S, "page", 1, "right", 5); panel.preset(*S, "page", 1, "تدرج: ذهبي")
+panel.move(*S, "page", 1, "right", 5, "p_"); panel.preset(*S, "page", 1, "تدرج: ذهبي")
 # page replace with MY image: must change + must fit the page + preview must show it at once
 try: h_pages.insert(pid, did, "replace", 2, "/tmp/mine.jpg", 1, False, False); raise SystemExit("replace without confirmation must fail")
 except gr.Error as e: print("no confirm ->", e.message[:40])
@@ -54,7 +53,8 @@ o = h_files.reset_all(pid, did); assert len(manual.effective_plan(manual.load_dr
 o = h_text.add_para(*S, 1); o = h_text.slot_delete(*S, 0); o = h_text.slot_delete(*S, 0)
 r = h_text.ai_slot(pid, did, 0, 0, 3); print("AI ->", list(r.values())[0][:30])
 o = h_text.ai_page(*S, True)
-png = h_output.preview(*S, -1, "cur"); assert os.path.exists(v(png, "pv_img"))
+png = h_output.preview(*S); assert os.path.exists(v(png, "pv_img"))
 # username
 print(auth.set_username("2222", "فيصل"), auth.check("faisal", "2222"), auth.check("فيصل", "2222"))
+o = h_text.nav(*S, 0, "next"); assert v(o, "cur") == 1 and v(o, "pv_img") and "2 من" in v(o, "pv_info"), o
 print("ALL OK")

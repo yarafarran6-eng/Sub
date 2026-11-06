@@ -10,7 +10,7 @@ HIDE = lambda: gr.update(visible=False)
 
 
 def build():
-    put("pid", gr.State("")), put("did", gr.State("")), put("cur", gr.State(0)), put("grp", gr.State(0)), put("pv", gr.State(-1))
+    put("pid", gr.State("")), put("did", gr.State("")), put("cur", gr.State(0)), put("grp", gr.State(0))
     # ---- the bar that never leaves the screen
     put("curbar", gr.HTML("<div class='curbar'>لا يوجد ملف مفتوح. ابدأ من تبويب «الملف».</div>"))
     with gr.Row():
@@ -26,7 +26,7 @@ def build():
             screen_edit.build()
         with gr.Tab("٣. الصفحات", id="pages"):
             screen_pages.build()
-        with gr.Tab("٤. المعاينة والملف النهائي", id="export"):
+        with gr.Tab("٤. الملف النهائي", id="export"):
             screen_export.build()
     _wire(tabs)
     return {"files_sel": C["files_sel"], "refresh": lambda: gr.update(choices=file_choices())}
@@ -66,39 +66,47 @@ def _wire(tabs):
     C["chap"].input(lambda pid, did, cur, grp, ch, *a: h_text.nav(pid, did, cur, grp, ch, "chap", *a), S + [C["chap"]] + ARS, ALL)
     C["b_grp_prev"].click(lambda pid, did, cur, grp, *a: h_text.group(pid, did, cur, grp, -1, *a), S + ARS, ALL)
     C["b_grp_next"].click(lambda pid, did, cur, grp, *a: h_text.group(pid, did, cur, grp, 1, *a), S + ARS, ALL)
-    C["b_save"].click(h_text.save_page, S + ARS, ALL)
+    C["b_save"].click(h_text.save_page, S + ARS, C["saved"])
 
     # ---- paragraphs
     for i in range(SLOTS):
         ar = C[f"s{i}_ar"]
-        ar.blur(lambda pid, did, cur, grp, t, i=i: h_text.blur(pid, did, cur, grp, t, i), S + [ar], ALL)
-        C[f"s{i}_ai"].click(lambda pid, did, cur, grp, i=i: h_text.ai_slot(pid, did, cur, grp, i), S, ALL)
-        C[f"s{i}_ocr"].click(lambda pid, did, cur, grp, i=i: h_text.ocr_slot(pid, did, cur, grp, i), S, ALL)
-        C[f"s{i}_num"].click(lambda pid, did, cur, grp, t, i=i: h_text.number_lines(pid, did, cur, grp, t, i), S + [ar], ALL)
+        ar.blur(lambda pid, did, cur, grp, t, i=i: h_text.blur(pid, did, cur, grp, t, i), S + [ar], C["saved"])
+        C[f"s{i}_ai"].click(lambda pid, did, cur, grp, i=i: h_text.ai_slot(pid, did, cur, grp, i), S, ar)
+        C[f"s{i}_ocr"].click(lambda pid, did, cur, grp, i=i: h_text.ocr_slot(pid, did, cur, grp, i), S, C[f"s{i}_en"])
+        C[f"s{i}_num"].click(lambda pid, did, cur, grp, t, i=i: h_text.number_lines(pid, did, cur, grp, t, i), S + [ar], ar)
         C[f"s{i}_del"].click(lambda pid, did, cur, grp, i=i: h_text.slot_delete(pid, did, cur, grp, i), S, ALL)
-        C[f"s{i}_style"].click(lambda pid, did, cur, grp, i=i: panel.pick_para(pid, did, cur, grp, int(grp) * SLOTS + i + 1), S, ALL)
     C["b_ai_page"].click(h_text.ai_page, S + [C["ai_keep"]], ALL)
     C["b_ocr_page"].click(h_text.ocr_page, S, ALL)
     C["b_add"].click(h_text.add_para, S + [C["add_after"]], ALL)
-    C["style"].blur(h_text.ai_cfg, [C["pid"], C["did"], C["ctx"], C["style"]], ALL)
-    C["ctx"].blur(h_text.ai_cfg, [C["pid"], C["did"], C["ctx"], C["style"]], ALL)
-    C["b_ctx"].click(h_text.ai_ctx, [C["pid"], C["did"]], ALL)
+    C["style"].blur(h_text.ai_cfg, [C["pid"], C["did"], C["ctx"], C["style"]], C["saved"])
+    C["ctx"].blur(h_text.ai_cfg, [C["pid"], C["did"], C["ctx"], C["style"]], C["saved"])
+    C["b_ctx"].click(h_text.ai_ctx, [C["pid"], C["did"]], C["ctx"])
 
-    # ---- the style panel
-    SC = S + [C["p_scope"], C["p_num"]]
-    ctl = [C[k] for k in ("p_font", "p_size", "p_align", "p_tOn", "p_tc", "p_hOn", "p_hc", "p_dx", "p_dy", "bg_mode", "bg_c1", "bg_c2", "bg_dir")]
-    for c in ctl:
-        c.input(panel.apply, SC + ctl, ALL)
-    C["p_scope"].input(panel.load, SC, ALL)
-    C["p_num"].input(panel.load, SC, ALL)
-    for w in ("font", "size", "align", "tcolor", "hl", "pos", "bg"):
-        C[f"{w}_rst"].click(lambda *a, w=w: panel.reset(*a, w), SC, ALL)
-        C[f"{w}_back"].click(lambda *a, w=w: panel.stepback(*a, w), SC, ALL)
-    for k in ("left", "right", "up", "down"):
-        C[f"mv_{k}"].click(lambda *a, k=k: panel.move(*a[:-1], k, a[-1]), SC + [C["p_step"]], ALL)
-    C["bg_preset"].input(lambda *a: panel.preset(*a), SC + [C["bg_preset"]], ALL)
+    # ---- style blocks: the page one (px "p_") and one under every paragraph (px "s<i>_")
+    CT = ("font", "size", "align", "tOn", "tc", "hOn", "hc", "dx", "dy")
+    BG = [C[k] for k in ("bg_mode", "bg_c1", "bg_c2", "bg_dir")]
+    blocks = [("p_", panel.PAGE, lambda grp: 1)] + [(f"s{i}_", panel.PARA, lambda grp, i=i: int(grp) * SLOTS + i + 1) for i in range(SLOTS)]
+    for px, scope, pn in blocks:
+        ctl = [C[px + k] for k in CT]
+        extra = BG if scope == panel.PAGE else []
+        dummy = (lambda: ("none", "#ffffff", "#cccccc", "vertical"))
+        if scope == panel.PAGE:
+            fn_apply = lambda pid, did, cur, grp, *v: panel.apply(pid, did, cur, grp, panel.PAGE, 1, *v)
+        else:
+            fn_apply = lambda pid, did, cur, grp, *v, pn=pn: panel.apply(pid, did, cur, grp, panel.PARA, pn(grp), *v, "none", "#ffffff", "#cccccc", "vertical")
+        OUT = ctl + extra + [C["last"], C["saved"]]
+        for c in ctl + extra:
+            c.input(fn_apply, S + ctl + extra, OUT)
+        for w in ("font", "size", "align", "tcolor", "hl", "pos") + (("bg",) if scope == panel.PAGE else ()):
+            C[f"{px}{w}_rst"].click(lambda pid, did, cur, grp, w=w, px=px, scope=scope, pn=pn: panel.reset(pid, did, cur, grp, scope, pn(grp), w, px), S, OUT)
+            C[f"{px}{w}_back"].click(lambda pid, did, cur, grp, w=w, px=px, scope=scope, pn=pn: panel.stepback(pid, did, cur, grp, scope, pn(grp), w, px), S, OUT)
+        for k in ("left", "right", "up", "down"):
+            C[f"{px}mv_{k}"].click(lambda pid, did, cur, grp, step, k=k, px=px, scope=scope, pn=pn: panel.move(pid, did, cur, grp, scope, pn(grp), k, step, px),
+                                   S + [C[px + "step"]], OUT)
+    C["bg_preset"].input(lambda pid, did, cur, grp, name: panel.preset(pid, did, cur, grp, panel.PAGE, 1, name), S + [C["bg_preset"]], [C[k] for k in ("bg_mode", "bg_c1", "bg_c2", "bg_dir", "last")])
     ask(C["b_page_all"], "pageall", lambda pid: (gr.update(visible=True), "هل ترجّع تنسيق الصفحة كلها (خطوط وأحجام وألوان وخلفية ومواضع كل فقراتها) للأصل؟ تقدر تتراجع بعدها."), C["pid"])
-    yes("pageall", panel.reset_everything, SC)
+    yes("pageall", panel.reset_everything, S)
 
     # ---- pages tab
     C["b_range"].click(h_pages.set_range, S + [C[k] for k in ("r_on", "r_a", "r_b", "r_out")], ALL)
@@ -111,10 +119,9 @@ def _wire(tabs):
     C["b_blank"].click(lambda pid, did, op, tg, f, p, s: h_pages.insert(pid, did, op, tg, None, 1, s, True), INS, ALL)
     C["b_peek"].click(h_pages.peek, [C["pid"], C["did"], C["pg_target"]], ALL)
 
-    # ---- preview + final file
-    PV = S + [C["pv"]]
-    for key, how in (("b_pv_cur", "cur"), ("b_pv_prev", "prev"), ("b_pv_next", "next")):
-        C[key].click(lambda pid, did, cur, grp, pv, *a, how=how: h_output.preview(pid, did, cur, grp, pv, how, *a), PV + ARS, ALL)
-    go_edit(C["b_pv_edit"].click(lambda pid, did, cur, grp, pv: view(pid, did, int(pv) if pv is not None and int(pv) >= 0 else int(cur), 0, "✍ انتقلت لتحرير الصفحة المعروضة."), PV, ALL))
-    C["b_build"].click(h_output.build, S + ARS, ALL)
-    C["font"].input(h_output.default_font, [C["pid"], C["did"], C["font"]], ALL)
+    # ---- preview (under the paragraphs) + final file
+    C["b_pv_cur"].click(h_output.preview, S + ARS, [C["pv_img"], C["pv_info"]])
+    C["b_pv_prev"].click(lambda *a: h_text.nav(*a[:5], "prev", *a[5:]), NAV + ARS, ALL)
+    C["b_pv_next"].click(lambda *a: h_text.nav(*a[:5], "next", *a[5:]), NAV + ARS, ALL)
+    C["b_build"].click(h_output.build, S + ARS, C["out"])
+    C["font"].input(h_output.default_font, [C["pid"], C["did"], C["font"]], C["saved"])
