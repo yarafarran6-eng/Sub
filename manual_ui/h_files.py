@@ -1,0 +1,141 @@
+"""Files, drafts, undo and reset: the «الملف» tab and the bar that is always visible."""
+import gradio as gr
+from core import manual, textcheck
+from ui.common import guard, safe, toast
+from .data import need, path_of
+from .view import view, empty
+
+
+@safe
+def new_file(file, progress=gr.Progress()):
+    guard()
+    if not file:
+        raise gr.Error("ارفع ملف PDF أولاً", title="ما فيه ملف")
+    path = path_of(file)
+    if not path.lower().endswith(".pdf"):
+        raise gr.Error("الترجمة اليدوية تدعم ملفات PDF فقط", title="صيغة غير مدعومة")
+    pid = manual.create(path, lambda i, n: progress(i / max(n, 1), desc=f"يستخرج النص: صفحة {i} من {n}"))
+    meta, units = manual.load(pid)
+    did = manual.ensure_draft(pid)
+    note = f"✅ استُخرج نص {meta['pages']} صفحة في {meta['extract_seconds']} ثانية. أُنشئت «مسودة 1» وتُحفظ تلقائياً."
+    if meta["no_text_pages"]:
+        note += f" {len(meta['no_text_pages'])} صفحة بدون نص قابل للقراءة."
+    bad = textcheck.share([u["text"] for u in units if u.get("translate")])
+    if bad > 0.15:
+        note += f" ⚠ {round(bad * 100)}% من فقرات الملف نصها غير مقروء (ترميز الخط). اقرأها من صورة الصفحة الأصلية أو بزر «👁 اقرأ من الصورة»."
+    return view(pid, did, 0, 0, note)
+
+
+@safe
+def open_sel(sel):
+    """One list for everything: manual projects and finished automatic translations."""
+    guard()
+    if not sel:
+        raise gr.Error("اختر ملفاً من القائمة", title="ما اخترت ملفاً")
+    kind, _, key = sel.partition(":")
+    if kind == "j":
+        try:
+            pid, n = manual.import_from_job(key)
+        except ValueError as e:
+            raise gr.Error(str(e), title="تعذّر الفتح")
+        did = manual.ensure_draft(pid)
+        return view(pid, did, 0, 0, f"✅ فُتح الملف للتعديل مع {n} فقرة مترجمة آلياً." if n else "📂 فُتح الملف.")
+    did = manual.ensure_draft(key)
+    d = manual.load_draft(key, did)
+    return view(key, did, d.get("page", 0), d.get("grp", 0), "📂 فُتح الملف من آخر مكان وقفت عنده.")
+
+
+@safe
+def ask_delete_file(pid, sel):
+    if not sel or not sel.startswith("p:"):
+        raise gr.Error("اختر ملفاً يدوياً من القائمة (الترجمات الآلية تُحذف من تبويب الترجمة الآلية)", title="ما يمكن حذفه من هنا")
+    return gr.update(visible=True), "هل تريد حذف هذا الملف بكل مسوداته نهائياً؟ ما يمكن التراجع."
+
+
+@safe
+def delete_file(pid, did, cur, grp, sel):
+    guard()
+    target = sel.split(":", 1)[1]
+    manual.delete(target)
+    toast("🗑 حُذف الملف.")
+    return empty() if target == pid else view(pid, did, cur, grp)
+
+
+@safe
+def switch_draft(pid, new_did):
+    guard()
+    need(pid)
+    if not new_did:
+        raise gr.Error("اختر مسودة", title="ما اخترت مسودة")
+    manual.set_last_draft(pid, new_did)
+    d = manual.load_draft(pid, new_did)
+    return view(pid, new_did, d.get("page", 0), d.get("grp", 0), f"📝 المسودة: {d['name']}")
+
+
+@safe
+def new_draft(pid):
+    guard()
+    need(pid)
+    return view(pid, manual.create_draft(pid), 0, 0, "✅ مسودة جديدة فاضية. المسودة السابقة محفوظة.")
+
+
+@safe
+def copy_draft(pid, did):
+    guard()
+    need(pid)
+    new = manual.create_draft(pid, copy_from=did)
+    d = manual.load_draft(pid, new)
+    return view(pid, new, d.get("page", 0), d.get("grp", 0), "✅ نُسخت المسودة الحالية بكل ما فيها.")
+
+
+@safe
+def rename_draft(pid, did, name):
+    guard()
+    need(pid)
+    if not (name or "").strip():
+        raise gr.Error("اكتب الاسم الجديد", title="الاسم فارغ")
+    manual.rename_draft(pid, did, name)
+    d = manual.load_draft(pid, did)
+    return view(pid, did, d.get("page", 0), d.get("grp", 0), "✏ تم تغيير الاسم.")
+
+
+@safe
+def ask_delete_draft(pid):
+    need(pid)
+    return gr.update(visible=True), "هل تريد حذف هذي المسودة نهائياً؟ ما يمكن التراجع."
+
+
+@safe
+def delete_draft(pid, did):
+    guard()
+    manual.save_draft(pid, manual.load_draft(pid, did))
+    new = manual.delete_draft(pid, did) or manual.create_draft(pid)
+    d = manual.load_draft(pid, new)
+    return view(pid, new, d.get("page", 0), d.get("grp", 0), "🗑 حُذفت المسودة.")
+
+
+@safe
+def undo(pid, did, cur, grp):
+    guard()
+    need(pid)
+    with manual._lock:
+        d = manual.load_draft(pid, did)
+        label = manual.undo(d)
+        manual.save_draft(pid, d)
+    return view(pid, did, cur, grp, f"↩ تراجعت عن: {label}" if label else "⚠ ما فيه شي أتراجع عنه.")
+
+
+@safe
+def ask_reset_all(pid):
+    need(pid)
+    return gr.update(visible=True), "هل تريد إعادة المسودة كلها إلى البداية (بدون ترجمات ولا تنسيقات ولا تغييرات صفحات)؟ تقدر تتراجع بزر «تراجع» بعدها."
+
+
+@safe
+def reset_all(pid, did):
+    guard()
+    with manual._lock:
+        d = manual.load_draft(pid, did)
+        manual.reset_all(d)
+        manual.save_draft(pid, d)
+    return view(pid, did, 0, 0, "⟲ رجعت المسودة إلى البداية. تقدر تتراجع.")

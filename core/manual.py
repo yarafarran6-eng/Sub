@@ -89,6 +89,21 @@ def list_projects():
     return out
 
 
+def list_all():
+    """Every file the person worked on: manual projects first, then finished automatic translations not opened here yet.
+    Returns [(label, value)] where value is "p:<id>" (manual project) or "j:<id>" (automatic job)."""
+    from . import jobs
+    out, taken = [], set()
+    for m in list_projects():
+        taken.add(m.get("from_job"))
+        tag = "ترجمة آلية فُتحت للتعديل" if m.get("from_job") else "يدوي"
+        out.append((f"{m['name']} · {m['pages']} صفحة · {tag}", "p:" + m["id"]))
+    for m in jobs.list_jobs():
+        if m.get("kind") == "pdf" and m.get("status") in ("ready", "partial") and m["id"] not in taken:
+            out.append((f"{m['name']} · ترجمة آلية جاهزة (تُفتح للتعديل)", "j:" + m["id"]))
+    return out
+
+
 def delete(pid):
     shutil.rmtree(_dir(pid), ignore_errors=True)
 
@@ -100,8 +115,14 @@ def import_from_job(job_id):
     src = list((jobs._dir(job_id)).glob("source.pdf"))
     if not meta or not src:
         raise ValueError("هذا الملف ليس PDF أو لم يعد موجوداً")
+    for p in list_projects():
+        if p.get("from_job") == job_id:
+            return p["id"], 0
     pid = create(str(src[0]))
     m, mu = load(pid)
+    m["from_job"] = job_id
+    m["name"] = meta.get("name") or m["name"]
+    save_meta(pid, m)
     key = lambda u: (u["page"], tuple(round(v) for v in u["bbox"]))
     done = {key(u): u["tr"] for u in units if u.get("kind") == "text" and u.get("tr") and u.get("bbox")}
     did = ensure_draft(pid)
@@ -263,6 +284,26 @@ def undo(d):
     return e["label"]
 
 
+def undo_option(d, *prefix):
+    """Undoes the last change of ONE option only (e.g. ("ustyle", uid, "size")), leaving the other changes as they are."""
+    prefix = list(prefix)
+    for idx in range(len(d["hist"]) - 1, -1, -1):
+        e = d["hist"][idx]
+        mine = [it for it in e["inv"] if it["p"][:len(prefix)] == prefix]
+        if mine:
+            for it in mine:
+                _put(d, it["p"], it["o"])
+            e["inv"] = [it for it in e["inv"] if it not in mine]
+            if not e["inv"]:
+                d["hist"].pop(idx)
+            return e["label"]
+    return None
+
+
+def last_label(d):
+    return d["hist"][-1]["label"] if d.get("hist") else ""
+
+
 def reset_all(d):
     """Back to the very beginning (everything empty and default). One step that can be undone."""
     orig = max([e["p"] for e in d["plan"] if e["k"] == "o"] + [-1]) + 1
@@ -345,27 +386,60 @@ def plan_insert(d, eff_pos, entry, where="after", replace=False):
     return _plan_edit(d, "استبدال صفحة" if replace else "إضافة صفحة", plan)
 
 
-def import_page(pid, path, page_no=1):
-    """Turns a page of another PDF, or an image, into a one-page PDF stored in the project. Returns the plan entry."""
+def import_page(pid, path, page_no=1, size=None):
+    """Turns a page of another PDF, or an image, into a one-page PDF stored in the project, fitted INSIDE the size of the book's page
+    (so it does not come out huge or tiny next to the other pages). Returns the plan entry."""
     import fitz
     ext = Path(path).suffix.lower()
     eid = uuid.uuid4().hex[:6]
     (_dir(pid) / "ext").mkdir(exist_ok=True)
     out = _dir(pid) / "ext" / f"{eid}.pdf"
+    w, h = size or (595, 842)
     if ext == ".pdf":
         src = fitz.open(path)
         n = max(1, min(int(page_no or 1), len(src)))
-        one = fitz.open()
-        one.insert_pdf(src, from_page=n - 1, to_page=n - 1)
-        one.save(str(out))
         label = f"{Path(path).name} · صفحة {n}"
     elif ext in (".png", ".jpg", ".jpeg", ".webp", ".bmp"):
-        img = fitz.open(path)
-        out.write_bytes(img.convert_to_pdf())
+        src, n = None, 1
         label = Path(path).name
     else:
         raise ValueError("الصيغة غير مدعومة. استخدم PDF أو صورة (png, jpg, webp)")
+    doc = fitz.open()
+    page = doc.new_page(width=w, height=h)
+    if src is not None:
+        sw, sh = src[n - 1].rect.width, src[n - 1].rect.height
+    else:
+        from PIL import Image
+        im = Image.open(path)
+        sw, sh = im.size
+    k = min(w / sw, h / sh)
+    tw, th = sw * k, sh * k
+    box = fitz.Rect((w - tw) / 2, (h - th) / 2, (w + tw) / 2, (h + th) / 2)
+    if src is not None:
+        page.show_pdf_page(box, src, n - 1)
+    else:
+        page.insert_image(box, filename=path)
+    doc.save(str(out))
     return {"k": "e", "f": f"ext/{eid}.pdf", "label": label[:60]}
+
+
+def page_size(pid, d, eff_pos):
+    """Size (width, height) of the page at this position of the output, to fit an imported page to it."""
+    import fitz
+    eff = effective_plan(d)
+    if not eff:
+        return None
+    e = eff[max(0, min(eff_pos, len(eff) - 1))]
+    try:
+        if e["k"] == "o":
+            r = fitz.open(source_path(pid))[e["p"]].rect
+        elif e["k"] == "e":
+            r = fitz.open(str(_dir(pid) / e["f"]))[0].rect
+        else:
+            return None
+        return (r.width, r.height)
+    except Exception:
+        return None
 
 
 # ----------------------------------------------------------------------------- paragraphs

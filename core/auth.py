@@ -21,8 +21,27 @@ def _load():
     return d
 
 
+def username() -> str:
+    """The chosen user name ("" = any name is accepted, only the password decides)."""
+    return "" if ENV_PW else (_load().get("username") or "")
+
+
+def set_username(password: str, name: str) -> str:
+    if ENV_PW:
+        return "الاسم والكلمة مضبوطان من إعدادات الاستضافة، غيّرهما من هناك"
+    d = _load()
+    if not hmac.compare_digest(_hash(password or "", bytes.fromhex(d["salt"])), d["hash"]):
+        return "كلمة السر الحالية غير صحيحة"
+    name = (name or "").strip()
+    if len(name) > 40:
+        return "الاسم طويل، اجعله أقل من 40 حرفاً"
+    d["username"] = name
+    write_json(FILE, d)
+    return f"تم تغيير اسم المستخدم إلى «{name}»" if name else "أُلغي اسم المستخدم: يكفي كلمة السر للدخول"
+
+
 def check(username: str, password: str) -> bool:
-    """Gradio auth callback. Any username is accepted; the password decides."""
+    """Gradio auth callback. The password decides; the user name is checked only if one was chosen."""
     now = time.time()
     if now < _fails["until"]:
         return False
@@ -31,6 +50,9 @@ def check(username: str, password: str) -> bool:
     else:
         d = _load()
         ok = hmac.compare_digest(_hash(password or "", bytes.fromhex(d["salt"])), d["hash"])
+        want = (d.get("username") or "").strip().lower()
+        if ok and want and (username or "").strip().lower() != want:
+            ok = False
     if ok:
         _fails["n"] = 0
     else:
@@ -56,5 +78,5 @@ def change(old: str, new: str) -> str:
     if len(new or "") < 6 or new == INITIAL_PASSWORD:
         return "كلمة السر الجديدة لازم تكون 6 خانات على الأقل ومختلفة عن الأولية"
     salt = os.urandom(16)
-    write_json(FILE, {"salt": salt.hex(), "hash": _hash(new, salt), "must_change": False})
+    write_json(FILE, {"salt": salt.hex(), "hash": _hash(new, salt), "must_change": False, "username": d.get("username", "")})
     return "تم تغيير كلمة السر"
