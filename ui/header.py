@@ -17,7 +17,7 @@ def hero_html():
 
 def banner_html():
     if auth.must_change():
-        return "<div class='warnbox'>⚠ غيّر كلمة السر الأولية (2222) من تبويب «٥. الإعدادات» قبل أي شي.</div>"
+        return "<div class='warnbox'>⚠ غيّر كلمة السر الأولية (2222) من تبويب «٦. الإعدادات» قبل أي شي.</div>"
     if not [k for k in load_keys() if k.get("enabled")]:
         return "<div class='warnbox'>⚠ ما أضفت أي مفتاح. افتح تبويب «١. المفاتيح» وأضف مفتاحاً واحداً على الأقل.</div>"
     return "<div class='okbox'>✓ جاهز. ارفع ملفاً من تبويب «٢. الترجمة».</div>"

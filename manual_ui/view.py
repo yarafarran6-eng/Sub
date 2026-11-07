@@ -1,6 +1,6 @@
 """Everything the editing screen shows for one page, returned as {component name: value}."""
 import gradio as gr
-from core import builder, manual
+from core import builder, manual, priority
 from ui.common import toast
 from . import panel
 from .consts import GARBLED_MSG, SLOTS
@@ -45,7 +45,7 @@ def empty(msg=""):
     out = R(pid="", did="", cur=0, grp=0, page=1, info="", note="افتح ملفاً من تبويب «الملف» أو ارفع ملفاً جديداً.", pager="", last="",
             curbar="<div class='curbar'>لا يوجد ملف مفتوح. ابدأ من تبويب «الملف».</div>", plan=[], pg_target=1,
             files_sel=u(choices=file_choices(), value=None), dsel=u(choices=[], value=None), chap=u(choices=[], value=None),
-            ctx="", style="", font="", orig=None)
+            ctx="", style="", font="", orig=None, ai_model=u(choices=priority.choices("translate")), ai_checker=u(choices=priority.choices("edit")))
     for i in range(SLOTS):
         out.update(R(**{f"s{i}_g": u(visible=False)}))
     _say(msg)
@@ -98,6 +98,7 @@ def view(pid, did, pos, grp, msg=""):
                  plan=[[i + 1, label(x), status(x)] for i, x in enumerate(eff)],
                  files_sel=u(choices=file_choices(), value="p:" + pid), dsel=u(choices=draft_choices(pid), value=did),
                  chap=u(choices=chap_choices(meta), value=None), ctx=d.get("ctx", ""), style=d.get("style", ""), font=u(value=d.get("font", "")),
-                 orig=orig_png(pid, eff, pos, items_all)))
+                 orig=orig_png(pid, eff, pos, items_all),
+                 ai_model=u(choices=priority.choices("translate")), ai_checker=u(choices=priority.choices("edit"))))
     _say(msg)
     return out

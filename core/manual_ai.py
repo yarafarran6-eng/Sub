@@ -20,14 +20,14 @@ def number_lines(text, fmt="{n}_ "):
     return "\n".join(out)
 
 
-def translate_units(items, ctx="", style=""):
+def translate_units(items, ctx="", style="", route=None):
     """items: [{"uid","text"}]. Uses the same pipeline as the automatic translation (parallel keys, quality gate, retries).
     Returns {uid: (translation, problem note)}. Raises NoKeys when no key can be used."""
     units = [{"id": i["uid"], "text": i["text"], "translate": True, "tr": "", "page": 0, "heading": False}
              for i in items if (i.get("text") or "").strip()]
     if not units:
         return {}
-    translator.translate_all(units, "auto", "ar", ctx, style, "")
+    translator.translate_all(units, "auto", "ar", ctx, style, "", route=route)
     return {u["id"]: (u.get("tr", ""), u.get("flag", "")) for u in units}
 
 

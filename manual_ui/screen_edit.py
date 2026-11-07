@@ -1,5 +1,6 @@
 """Tab «الترجمة»: page navigation, the page's style at the top, the paragraphs (each with its own style arrow), the live preview below."""
 import gradio as gr
+from core import priority
 from .consts import ALIGN_CHOICES, BG_PRESETS, HL_DEFAULT, SLOTS, fonts
 from .reg import put
 from .widgets import danger
@@ -64,6 +65,7 @@ def _slot(i):
             put(f"s{i}_en", gr.Textbox(label="النص الأصلي", lines=4, max_lines=16, interactive=False, elem_classes="enbox"))
         with gr.Row():
             put(f"s{i}_ai", gr.Button("🤖 ترجم هذي الفقرة", size="sm"))
+            put(f"s{i}_rev", gr.Button("🔍 دقّق ترجمتي", size="sm"))
             put(f"s{i}_ocr", gr.Button("👁 اقرأ من الصورة", size="sm"))
             put(f"s{i}_num", gr.Button("🔢 رقّم الأسطر", size="sm"))
             put(f"s{i}_del", gr.Button("🗑 حذف الفقرة", size="sm"))
@@ -85,6 +87,15 @@ def build():
     with gr.Accordion("🎨 تنسيق الصفحة كلها: خط، حجم، لون، تحديد، مكان، خلفية (اضغط السهم)", open=False):
         gr.HTML("<div class='mini'>يطبَّق على كل فقرات الصفحة. وتنسيق فقرة بعينها (تحت الفقرة) يغلب تنسيق الصفحة.</div>")
         style_block("p_", True)
+    with gr.Accordion("🤖 الذكاء الاصطناعي: من يترجم ومن يدقق (ينطبق على أزرار الترجمة والتدقيق تحت)", open=False):
+        gr.HTML("<div class='mini'>إذا تركتهم على «حسب ترتيب الأولوية» يمشي على الترتيب اللي ضبطته في الإعدادات. تقدر تختار ذكاءً بعينه، وإذا انتهى حده يكمل على الترتيب (لو علّمت الخانة). التنبيه الجانبي يعرض اسم الذكاء والمدة التقريبية والمتبقي من حده.</div>")
+        with gr.Row():
+            put("ai_model", gr.Dropdown(priority.choices("translate"), value="auto", label="الذي يترجم", scale=3))
+            put("ai_fb", gr.Checkbox(True, label="إذا انتهى حده كمّل على ترتيب الأولوية", scale=2))
+        with gr.Row():
+            put("ai_mode", gr.Radio([("ترجمة فقط", "only"), ("ترجمة ثم تدقيق", "review")], value="only", label="عند الضغط على «ترجم»", scale=2))
+            put("ai_checker", gr.Dropdown(priority.choices("edit"), value="auto", label="الذي يدقق", scale=3))
+            put("ai_cfb", gr.Checkbox(True, label="إذا انتهى حد المدقق كمّل على ترتيب الأولوية", scale=2))
     for i in range(SLOTS):
         _slot(i)
     put("pager", gr.Markdown())
@@ -96,6 +107,7 @@ def build():
         with gr.Row():
             put("ai_keep", gr.Checkbox(True, label="لا تستبدل الفقرات اللي كتبتها بيدي"))
             put("b_ai_page", gr.Button("🤖 ترجم كل فقرات الصفحة", variant="primary"))
+            put("b_rev_page", gr.Button("🔍 دقّق ترجمات الصفحة"))
             put("b_ocr_page", gr.Button("👁 اقرأ الفقرات غير المقروءة"))
             put("b_save", gr.Button("💾 حفظ الصفحة"))
     gr.HTML("<div class='step'><i>👁</i>معاينة الصفحة كما ستظهر في الملف النهائي</div><p class='hint'>تظهر المعاينة تلقائياً كلما انتقلت لصفحة. زر «معاينة التالية» ينقلك للصفحة التالية بفقراتها ومعاينتها.</p>")

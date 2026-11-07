@@ -5,15 +5,41 @@ from . import llm
 from .config import get_settings, add_spent
 from .keystore import load_keys, add_usage, PROVIDER_LABELS
 
-TASK_AR = {"translate": "ترجمة", "context": "بناء المسرد", "edit": "تدقيق", "ping": "اختبار"}
+TASK_AR = {"translate": "ترجمة", "context": "بناء المسرد", "edit": "تدقيق", "ping": "اختبار", "chat": "محادثة", "ocr": "قراءة صورة"}
+_tls = threading.local()          # the "route" of the current thread: which keys to prefer and in which order
 
 
 class NoKeys(Exception):
     pass
 
 
+class AllBusy(NoKeys):
+    """Every key the person allowed is at its limit right now, and waiting would take too long."""
+
+
 class Stopped(Exception):
     pass
+
+
+def set_route(route):
+    _tls.route = route
+
+
+def get_route():
+    return getattr(_tls, "route", None)
+
+
+class use_route:
+    """with use_route(route): calls made by this thread follow the route."""
+    def __init__(self, route):
+        self.route = route
+
+    def __enter__(self):
+        self.old = get_route()
+        set_route(self.route)
+
+    def __exit__(self, *a):
+        set_route(self.old)
 
 
 def kname(k):
@@ -69,7 +95,7 @@ class KeyPool:
         r = self._rt(k["id"])
         if not k.get("enabled") or r["dead"]:
             return False
-        if k.get("role", "both") not in ("both", role):
+        if role != "any" and k.get("role", "both") not in ("both", role):
             return False
         if role == "translate" and k["id"] in self.quarantine:
             return False
@@ -78,13 +104,20 @@ class KeyPool:
         return True
 
     def acquire(self, role="translate", stop=None, avoid=None):
+        route = get_route()
+        t0 = time.time()
         while True:
             if stop and stop():
                 raise Stopped()
             chosen, wait_for = None, 2.0
             with self.lock:
                 now = time.time()
+                from .priority import order_for
+                order = route["order"] if route is not None else order_for(role)
+                only = bool(route and route.get("only"))
                 alive = [k for k in load_keys() if self._alive(k, role)]
+                if only:
+                    alive = [k for k in alive if k["id"] in order]
                 if not alive:
                     why = "؛ ".join(f"{kname(k)}: {self._rt(k['id'])['dead'][:140]}" for k in load_keys()
                                     if self._rt(k["id"])["dead"])
@@ -94,8 +127,15 @@ class KeyPool:
                 if ready and avoid:                      # prefer a different key than the ones that just failed the checks
                     ready = [k for k in ready if k["id"] not in avoid] or ready
                 if ready:
-                    free = [k for k in ready if not k.get("paid") and self._rt(k["id"])["next_ok"] <= now + 3]
-                    k = min(free or ready, key=lambda x: self._rt(x["id"])["next_ok"])
+                    if order:                            # the person's priority: first listed key that is free, then the next ...
+                        rank = {kid: i for i, kid in enumerate(order)}
+                        listed = sorted([k for k in ready if k["id"] in rank], key=lambda k: rank[k["id"]])
+                        pool_ = listed or ready          # keys not on the list are only a last resort
+                        soon = [k for k in pool_ if self._rt(k["id"])["next_ok"] <= now + 3]
+                        k = soon[0] if soon else min(pool_, key=lambda x: self._rt(x["id"])["next_ok"])
+                    else:
+                        free = [k for k in ready if not k.get("paid") and self._rt(k["id"])["next_ok"] <= now + 3]
+                        k = min(free or ready, key=lambda x: self._rt(x["id"])["next_ok"])
                     r = self._rt(k["id"])
                     start = max(now, r["next_ok"], self.glob_next)
                     r["next_ok"] = start + 60.0 / max(k.get("rpm", 10), 1)
@@ -105,6 +145,13 @@ class KeyPool:
                 else:
                     self.waiting_until = min(self._rt(k["id"])["cool"] for k in alive)
                     wait_for = min(2.0, max(0.1, self.waiting_until - now))
+                    if route and route.get("max_wait") and now - t0 + wait_for > route["max_wait"]:
+                        parts = []
+                        for k in alive:
+                            r = self._rt(k["id"])
+                            why = "الحد اليومي" if r["reason"] == "day" else "حد الدقيقة"
+                            parts.append(f"{kname(k)} ({why}) يتجدد بعد {human(r['cool'] - now)}")
+                        raise AllBusy("كل الذكاءات اللي اخترتها وصلت حدها الآن: " + "؛ ".join(parts) + ". اختر ذكاءً ثانياً أو أضف مفتاحاً.")
             if chosen:
                 if chosen[1] > 0:
                     time.sleep(chosen[1])
@@ -205,11 +252,17 @@ def call(messages, role="translate", max_tokens=4096, temperature=0.3, task="tra
         r = POOL._rt(k["id"])
         r["busy"] += 1
         r["task"] = task
+        t_start = time.time()
         try:
             text, usage = llm.chat(k, messages, max_tokens, temperature, task)
+            secs = time.time() - t_start
             POOL.record(k, usage)
+            r["lat"] = secs if not r.get("lat") else r["lat"] * 0.7 + secs * 0.3
+            route = get_route()
+            if route is not None:
+                route["calls"].append({"id": k["id"], "name": kname(k), "model": k.get("model", ""), "secs": secs, "task": task})
             if meta is not None:
-                meta.update(key_id=k["id"], name=kname(k), model=k.get("model", ""))
+                meta.update(key_id=k["id"], name=kname(k), model=k.get("model", ""), secs=secs)
             return text
         except llm.BadRequest as e:
             e.key_id = k["id"]

@@ -2,7 +2,7 @@
 import time
 from concurrent.futures import ThreadPoolExecutor
 import gradio as gr
-from core import builder, manual, manual_ai
+from core import builder, editor, manual, manual_ai, priority
 from core.pool import NoKeys
 from ui.common import guard, safe, toast
 from .consts import SLOTS
@@ -80,12 +80,38 @@ def number_lines(pid, did, cur, grp, text, i):
     return R(**{f"s{i}_ar": new})
 
 
-def _ai(pid, did, items):
+def _routes(model, fb, checker, cfb):
+    return (priority.new_route("translate", model or priority.AUTO, bool(fb), max_wait=30),
+            priority.new_route("edit", checker or priority.AUTO, bool(cfb), max_wait=30))
+
+
+def _notice(text, title, secs=7):
+    if text:
+        gr.Info(text, title=title, duration=secs)
+
+
+def _ai(pid, did, items, route):
+    """Translates the items; the side notice says who works, for about how long, and what is left of its limit."""
     meta, units, d = load_all(pid, did)
+    _notice(priority.announce(route, "translate", "يترجم الآن", len(items)), "🤖 الذكاء الاصطناعي يشتغل", 6)
     try:
-        return manual_ai.translate_units([{"uid": i["uid"], "text": i["en"]} for i in items], d.get("ctx", ""), d.get("style", ""))
+        res = manual_ai.translate_units([{"uid": i["uid"], "text": i["en"]} for i in items], d.get("ctx", ""), d.get("style", ""), route)
     except NoKeys as e:
-        raise gr.Error(str(e), title="ما فيه مفاتيح تشتغل")
+        raise gr.Error(str(e), title="ما فيه ذكاء متاح الآن")
+    _notice(priority.summary(route, "ترجم"), "✅ انتهت الترجمة", 14)
+    return res
+
+
+def _review(pid, did, pairs, route):
+    """pairs: [{"uid","text","tr"}] -> {uid: corrected}. Shows who checks and what is left."""
+    meta, units, d = load_all(pid, did)
+    _notice(priority.announce(route, "edit", "يدقق الآن", len(pairs)), "🔍 التدقيق يشتغل", 6)
+    try:
+        fixed = editor.review_units(pairs, "ar", d.get("ctx", ""), d.get("style", ""), route=route)
+    except NoKeys as e:
+        raise gr.Error(str(e), title="ما فيه مدقق متاح الآن")
+    _notice(priority.summary(route, "دقّق") + f"<br>عدّل {len(fixed)} من {len(pairs)} فقرة" if route["calls"] else None, "✅ انتهى التدقيق", 14)
+    return fixed
 
 
 def _ocr_items(pid, did, items):
@@ -136,8 +162,16 @@ def ocr_page(pid, did, cur, grp):
     return view(pid, did, cur, grp, f"👁 قُرئت {n} فقرة من الصورة. راجع النصوص قبل الترجمة.")
 
 
+def _save_tr(pid, did, mapping):
+    with manual._lock:
+        d = manual.load_draft(pid, did)
+        for uid, tr in mapping.items():
+            manual.set_text(d, uid, tr)
+        manual.save_draft(pid, d)
+
+
 @safe
-def ai_slot(pid, did, cur, grp, i):
+def ai_slot(pid, did, cur, grp, i, model, fb, mode, checker, cfb):
     guard()
     need(pid)
     allit, items = items_now(pid, did, cur, grp)[4:6]
@@ -149,19 +183,36 @@ def ai_slot(pid, did, cur, grp, i):
     if it["garbled"]:
         _ocr_items(pid, did, [it])
         it = items_now(pid, did, cur, grp)[5][i]
-    tr, flag = _ai(pid, did, [it]).get(it["uid"], ("", ""))
+    rt, re_ = _routes(model, fb, checker, cfb)
+    tr, flag = _ai(pid, did, [it], rt).get(it["uid"], ("", ""))
     if not tr:
         raise gr.Error("ما رجعت ترجمة. جرّب مرة ثانية أو راجع المفاتيح.", title="ما رجعت ترجمة")
-    with manual._lock:
-        d = manual.load_draft(pid, did)
-        manual.set_text(d, it["uid"], tr)
-        manual.save_draft(pid, d)
-    toast("🤖 تمت ترجمة الفقرة" + (f" (ملاحظة: {flag})" if flag else "") + ". عدّل عليها بيدك لو تبي.", warn=bool(flag))
+    if mode == "review":
+        tr = _review(pid, did, [{"uid": it["uid"], "text": it["en"], "tr": tr}], re_).get(it["uid"], tr)
+    _save_tr(pid, did, {it["uid"]: tr})
+    if flag:
+        toast(f"ملاحظة على الترجمة: {flag}", warn=True)
     return R(**{f"s{i}_ar": tr})
 
 
 @safe
-def ai_page(pid, did, cur, grp, keep_manual):
+def review_slot(pid, did, cur, grp, i, model, fb, mode, checker, cfb):
+    """Checks the translation that is already written in this paragraph's box."""
+    guard()
+    need(pid)
+    it = items_now(pid, did, cur, grp)[5][i]
+    if not it["ar"].strip():
+        raise gr.Error("اكتب ترجمة أو اضغط «ترجم» أولاً، ما فيه شي أدققه", title="الخانة فاضية")
+    fixed = _review(pid, did, [{"uid": it["uid"], "text": it["en"], "tr": it["ar"]}], _routes(model, fb, checker, cfb)[1])
+    if not fixed:
+        toast("المدقق ما لقى شي يحتاج تعديل في هذي الفقرة ✓")
+        return R(**{f"s{i}_ar": it["ar"]})
+    _save_tr(pid, did, fixed)
+    return R(**{f"s{i}_ar": fixed[it["uid"]]})
+
+
+@safe
+def ai_page(pid, did, cur, grp, keep_manual, model, fb, mode, checker, cfb):
     guard()
     need(pid)
     allit = items_now(pid, did, cur, grp)[4]
@@ -172,17 +223,27 @@ def ai_page(pid, did, cur, grp, keep_manual):
     todo = [i for i in allit if not i["custom"] and not i["deleted"] and (not keep_manual or not i["ar"].strip())]
     if not todo:
         return view(pid, did, cur, grp, "ما فيه فقرات تحتاج ترجمة في هذي الصفحة.")
-    res = _ai(pid, did, todo)
-    with manual._lock:
-        d = manual.load_draft(pid, did)
-        n = 0
-        for it in todo:
-            tr, flag = res.get(it["uid"], ("", ""))
-            if tr:
-                manual.set_text(d, it["uid"], tr)
-                n += 1
-        manual.save_draft(pid, d)
-    return view(pid, did, cur, grp, f"🤖 تُرجمت {n} فقرة بالذكاء الاصطناعي. راجعها وعدّل عليها بيدك.")
+    rt, re_ = _routes(model, fb, checker, cfb)
+    res = _ai(pid, did, todo, rt)
+    out = {it["uid"]: res[it["uid"]][0] for it in todo if res.get(it["uid"], ("", ""))[0]}
+    if mode == "review" and out:
+        src = {it["uid"]: it["en"] for it in todo}
+        out.update(_review(pid, did, [{"uid": u, "text": src[u], "tr": t} for u, t in out.items()], re_))
+    _save_tr(pid, did, out)
+    return view(pid, did, cur, grp, f"🤖 تُرجمت {len(out)} فقرة" + (" وتم تدقيقها" if mode == "review" else "") + ". راجعها وعدّل عليها بيدك.")
+
+
+@safe
+def review_page(pid, did, cur, grp, model, fb, mode, checker, cfb):
+    guard()
+    need(pid)
+    allit = items_now(pid, did, cur, grp)[4]
+    pairs = [{"uid": i["uid"], "text": i["en"], "tr": i["ar"]} for i in allit if i["ar"].strip() and not i["custom"] and not i["deleted"]]
+    if not pairs:
+        return view(pid, did, cur, grp, "ما فيه ترجمات مكتوبة في هذي الصفحة أدققها.")
+    fixed = _review(pid, did, pairs, _routes(model, fb, checker, cfb)[1])
+    _save_tr(pid, did, fixed)
+    return view(pid, did, cur, grp, f"🔍 دُقّقت {len(pairs)} فقرة وعُدّلت {len(fixed)} منها." if fixed else "🔍 المدقق ما لقى شي يحتاج تعديل ✓")
 
 
 @safe

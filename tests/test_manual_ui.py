@@ -51,8 +51,8 @@ print("files:", [l for l, _ in manual.list_all()])
 o = h_files.reset_all(pid, did); assert len(manual.effective_plan(manual.load_draft(pid, did))) == 3
 # add / delete paragraph, AI with the mock key
 o = h_text.add_para(*S, 1); o = h_text.slot_delete(*S, 0); o = h_text.slot_delete(*S, 0)
-r = h_text.ai_slot(pid, did, 0, 0, 3); print("AI ->", list(r.values())[0][:30])
-o = h_text.ai_page(*S, True)
+r = h_text.ai_slot(pid, did, 0, 0, 3, "auto", True, "only", "auto", True); print("AI ->", list(r.values())[0][:30])
+o = h_text.ai_page(*S, True, "auto", True, "only", "auto", True)
 png = h_output.preview(*S); assert os.path.exists(v(png, "pv_img"))
 # username
 print(auth.set_username("2222", "فيصل"), auth.check("faisal", "2222"), auth.check("فيصل", "2222"))

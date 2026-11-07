@@ -123,3 +123,24 @@ def find_replace(units, find, repl):
             n += u["tr"].count(find)
             u["tr"] = u["tr"].replace(find, repl)
     return n
+
+
+def review_units(items, tgt, ctx="", style="", sensitivity="medium", route=None):
+    """Checks a few paragraphs (the manual editor). items: [{"uid","text","tr"}]. Returns {uid: corrected translation} for the changed ones only."""
+    from .pool import use_route
+    units = [{"id": i["uid"], "text": i["text"], "tr": i["tr"], "translate": True} for i in items if (i.get("tr") or "").strip()]
+    if not units:
+        return {}
+    system = (f"You are the chief editor of a professional literary translation into {LANGS.get(tgt, tgt)}. "
+              f"You receive paragraphs with SOURCE and TRANSLATION. {SENS[sensitivity]}\n"
+              "Do NOT touch paragraphs that are already good. Do not rewrite for taste.\n"
+              'Return ONLY a JSON array of patches: [{"id": "P_12", "fix": "<full corrected translation of that paragraph>", "why": "<few words>"}]. '
+              "Return [] if nothing needs fixing. Keep the author's voice. No text outside the JSON.\n"
+              f"CONTEXT CARD:\n{ctx or 'none'}\nSTYLE: {style or 'none'}")
+    by_id = {u["id"]: u for u in units}
+    changed = {}
+    with use_route(route):
+        for b in _batches(units, _editor_chars()):
+            for ap in _apply(by_id, _run_batch(b, system), {u["id"] for u in b}, tgt):
+                changed[ap["id"]] = ap["new"]
+    return changed

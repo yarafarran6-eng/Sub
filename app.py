@@ -4,7 +4,7 @@ import gradio as gr
 from core import auth, jobs, monitor
 from manual_ui import screen as manual_screen
 from manual_ui.consts import PASTE_JS
-from ui import tab_keys, tab_review, tab_settings, tab_translate
+from ui import tab_chat, tab_keys, tab_review, tab_settings, tab_translate
 from ui.common import CSS, THEME
 from ui.header import banner_html, hero_html
 
@@ -22,6 +22,7 @@ with gr.Blocks(title="مترجم الروايات") as demo:
         with gr.Tab("٣. ✍ المحرر اليدوي") as tab_manual:
             man = manual_screen.build()
         rev = tab_review.build()
+        tab_chat.build()
         tab_settings.build()
 
     timer = gr.Timer(2)
@@ -29,10 +30,10 @@ with gr.Blocks(title="مترجم الروايات") as demo:
     timer.tick(monitor.keys_html, None, keys["kpanel"])
     job_choices = tab_translate.job_choices
     from ui.tab_keys import key_choices
-    demo.load(lambda: (gr.update(choices=job_choices()), gr.update(choices=job_choices()), gr.update(choices=key_choices()), man["refresh"]()),
-              None, [trans["jsel"], rev["rsel"], keys["ksel"], man["files_sel"]])
+    demo.load(lambda: (gr.update(choices=job_choices()), gr.update(choices=job_choices()), gr.update(choices=key_choices()), *man["refresh"]()),
+              None, [trans["jsel"], rev["rsel"], keys["ksel"]] + man["refresh_outs"])
     rev["tab"].select(lambda: gr.update(choices=job_choices()), None, rev["rsel"])
-    tab_manual.select(man["refresh"], None, man["files_sel"])
+    tab_manual.select(man["refresh"], None, man["refresh_outs"])
 
 if __name__ == "__main__":
     jobs.recover()

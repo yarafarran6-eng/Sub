@@ -3,7 +3,7 @@ from . import llm
 from .config import LANGS, get_settings
 from .keystore import PROVIDERS, load_keys
 from . import quality
-from .pool import POOL, call, NoKeys, Stopped
+from .pool import POOL, call, NoKeys, Stopped, set_route
 
 MARK = re.compile(r"^\s*\[(P_\d+)\]\s?(.*)$")
 
@@ -153,7 +153,7 @@ def chunk_budget():
     return min(PROVIDERS[k["provider"]]["max_chars"] for k in ks)
 
 
-def translate_all(units, src, tgt, ctx, style, golden, on_progress=None, should_stop=lambda: False):
+def translate_all(units, src, tgt, ctx, style, golden, on_progress=None, should_stop=lambda: False, route=None):
     POOL.reset_quality()
     """Fills u['tr'] for every translatable unit. Resumable: units with a translation are skipped.
     on_progress(n_new_units, n_chunks_done, n_chunks_total) is called after every finished chunk."""
@@ -163,7 +163,7 @@ def translate_all(units, src, tgt, ctx, style, golden, on_progress=None, should_
     total, done, fatal = len(chunks), 0, None
     by_id = {u["id"]: u for u in units}
     workers = max(1, min(get_settings()["max_workers"], len([k for k in load_keys() if k.get("enabled")]) * 3 or 1))
-    ex = cf.ThreadPoolExecutor(workers)
+    ex = cf.ThreadPoolExecutor(workers, initializer=set_route, initargs=(route,))
     try:
         futs = {ex.submit(_translate_checked, c, sysmsg, should_stop, tgt): c for c in chunks}
         for f in cf.as_completed(futs):

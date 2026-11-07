@@ -29,13 +29,18 @@ def build():
         with gr.Tab("٤. الملف النهائي", id="export"):
             screen_export.build()
     _wire(tabs)
-    return {"files_sel": C["files_sel"], "refresh": lambda: gr.update(choices=file_choices())}
+    def refresh():
+        from core import priority
+        return gr.update(choices=file_choices()), gr.update(choices=priority.choices("translate")), gr.update(choices=priority.choices("edit"))
+
+    return {"files_sel": C["files_sel"], "refresh": refresh, "refresh_outs": [C["files_sel"], C["ai_model"], C["ai_checker"]]}
 
 
 def _wire(tabs):
     ALL = list(C.values())
     S = [C["pid"], C["did"], C["cur"], C["grp"]]
     ARS = [C[f"s{i}_ar"] for i in range(SLOTS)]
+    AIS = [C[k] for k in ("ai_model", "ai_fb", "ai_mode", "ai_checker", "ai_cfb")]
     go_edit = lambda ev: ev.then(lambda: gr.Tabs(selected="edit"), None, tabs)
 
     def ask(btn, name, fn, inputs):
@@ -72,11 +77,13 @@ def _wire(tabs):
     for i in range(SLOTS):
         ar = C[f"s{i}_ar"]
         ar.blur(lambda pid, did, cur, grp, t, i=i: h_text.blur(pid, did, cur, grp, t, i), S + [ar], C["saved"])
-        C[f"s{i}_ai"].click(lambda pid, did, cur, grp, i=i: h_text.ai_slot(pid, did, cur, grp, i), S, ar)
+        C[f"s{i}_ai"].click(lambda pid, did, cur, grp, *a, i=i: h_text.ai_slot(pid, did, cur, grp, i, *a), S + AIS, ar)
+        C[f"s{i}_rev"].click(lambda pid, did, cur, grp, *a, i=i: h_text.review_slot(pid, did, cur, grp, i, *a), S + AIS, ar)
         C[f"s{i}_ocr"].click(lambda pid, did, cur, grp, i=i: h_text.ocr_slot(pid, did, cur, grp, i), S, C[f"s{i}_en"])
         C[f"s{i}_num"].click(lambda pid, did, cur, grp, t, i=i: h_text.number_lines(pid, did, cur, grp, t, i), S + [ar], ar)
         C[f"s{i}_del"].click(lambda pid, did, cur, grp, i=i: h_text.slot_delete(pid, did, cur, grp, i), S, ALL)
-    C["b_ai_page"].click(h_text.ai_page, S + [C["ai_keep"]], ALL)
+    C["b_ai_page"].click(h_text.ai_page, S + [C["ai_keep"]] + AIS, ALL)
+    C["b_rev_page"].click(h_text.review_page, S + AIS, ALL)
     C["b_ocr_page"].click(h_text.ocr_page, S, ALL)
     C["b_add"].click(h_text.add_para, S + [C["add_after"]], ALL)
     C["style"].blur(h_text.ai_cfg, [C["pid"], C["did"], C["ctx"], C["style"]], C["saved"])
