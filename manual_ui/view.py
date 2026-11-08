@@ -63,7 +63,8 @@ def view(pid, did, pos, grp, msg=""):
     ngrp = max(1, -(-len(items_all) // SLOTS))
     grp = max(0, min(int(grp or 0), ngrp - 1))
     items = items_all[grp * SLOTS:(grp + 1) * SLOTS]
-    if d.get("page") != pos or d.get("grp") != grp:
+    page_changed = d.get("page") != pos
+    if page_changed or d.get("grp") != grp:
         d["page"], d["grp"] = pos, grp
         manual.save_draft(pid, d)
     done, total = manual.stats(units, d)
@@ -80,6 +81,8 @@ def view(pid, did, pos, grp, msg=""):
             last=f"آخر تغيير: {last}" if last else "لا توجد تغييرات للتراجع عنها",
             curbar=f"<div class='curbar'><b>الملف:</b> {meta['name']} · <b>المسودة:</b> {d['name']} · <b>الصفحة:</b> {pos + 1} من {len(eff)}</div>",
             b_grp_prev=u(visible=ngrp > 1), b_grp_next=u(visible=ngrp > 1))
+    if page_changed:                      # the boxes list belongs to the page it was made for
+        out.update(R(bx_img=None, bx_pick=u(choices=[], value=None), bx_info=""))
     for i in range(SLOTS):
         if i >= len(items):
             out.update(R(**{f"s{i}_g": u(visible=False)}))

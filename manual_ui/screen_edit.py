@@ -105,6 +105,24 @@ def build():
                 put("cp_name", gr.Markdown("لم تختر صورة بعد", elem_classes="pc-name"))
             put("b_cp_rep", gr.Button("استبدل هذي الصفحة بالصورة", variant="primary"))
             danger("cprep")
+    with gr.Accordion("🟥 صناديق التحديد من الملف الأصلي: لون · حذف · تحريك · حجم", open=False):
+        gr.HTML("<div class='mini'>الصناديق الملوّنة اللي حول الكلام في الصفحة الأصلية. 1) اضغط «أظهر الصناديق» 2) اختر رقم الصندوق من القائمة (الأرقام الزرقاء في الصورة) 3) غيّر ما تبغى واضغط «طبّق». النتيجة تظهر في المعاينة تحت.</div>")
+        put("b_bx_show", gr.Button("أظهر الصناديق", variant="primary"))
+        put("bx_info", gr.Markdown())
+        put("bx_img", gr.Image(show_label=False, type="filepath", interactive=False))
+        put("bx_pick", gr.Dropdown([], value=None, label="الصندوق"))
+        with gr.Row():
+            put("bx_con", gr.Checkbox(False, label="غيّر لونه"))
+            put("bx_c", gr.ColorPicker("#c0504d", label="اللون الجديد"))
+        with gr.Row():
+            put("bx_dx", gr.Number(0, label="حرّك يمين/يسار (نقطة)"))
+            put("bx_dy", gr.Number(0, label="حرّك فوق/تحت (نقطة)"))
+            put("bx_dw", gr.Number(0, label="زِد العرض (نقطة)"))
+            put("bx_dh", gr.Number(0, label="زِد الارتفاع (نقطة)"))
+        with gr.Row():
+            put("b_bx_apply", gr.Button("طبّق على هذا الصندوق", variant="primary"))
+            put("b_bx_del", gr.Button("احذف الصندوق", variant="stop"))
+            put("b_bx_rst", gr.Button("رجّعه مثل الأصل"))
     with gr.Accordion("🤖 الذكاء الاصطناعي: من يترجم ومن يدقق (ينطبق على أزرار الترجمة والتدقيق تحت)", open=False):
         gr.HTML("<div class='mini'>إذا تركتهم على «حسب ترتيب الأولوية» يمشي على الترتيب اللي ضبطته في الإعدادات. تقدر تختار ذكاءً بعينه، وإذا انتهى حده يكمل على الترتيب (لو علّمت الخانة). التنبيه الجانبي يعرض اسم الذكاء والمدة التقريبية والمتبقي من حده.</div>")
         with gr.Row():

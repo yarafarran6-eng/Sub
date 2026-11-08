@@ -186,7 +186,7 @@ def fitz_rect(*a):
     return fitz.Rect(*a)
 
 
-def _apply_page(doc, pno, us, obstacles, tgt, default_family=None, bg=None):
+def _apply_page(doc, pno, us, obstacles, tgt, default_family=None, bg=None, bedit=None):
     """Replaces the original text of the given paragraphs on one page. Returns how many were shrunk to fit."""
     import fitz
     rtl = tgt in RTL
@@ -194,10 +194,13 @@ def _apply_page(doc, pno, us, obstacles, tgt, default_family=None, bg=None):
     W = page.rect.width
     shrunk = 0
     arch = fitz.Archive(str(FONTS)) if FONTS.exists() else None
+    pboxes = page_boxes(page)                 # numbered on the ORIGINAL page, before anything is drawn
     has_bg = _draw_background(page, bg)
+    if bedit:
+        _edit_boxes(page, pboxes, bedit)
     fams = font_families() if tgt == "ar" else {}
     dflt = fams.get(default_family or DEFAULT_FAMILY) or fams.get(DEFAULT_FAMILY) or ("NotoNaskhArabic-Regular.ttf", "NotoNaskhArabic-Bold.ttf")
-    boxes = _boxes_around(page)               # label boxes of the ORIGINAL page (before anything is erased)
+    boxes = [r for r, _ in pboxes]            # label boxes of the ORIGINAL page (before anything is erased)
     for u in us:
         if u.get("custom"):                   # an added paragraph has no original text to erase
             continue
@@ -299,18 +302,77 @@ def _fresh(scratch, page):
     return scratch.new_page(width=page.rect.width, height=page.rect.height)
 
 
-def _boxes_around(page):
-    """Filled rectangles drawn on the page (label boxes, highlights): a short line sitting in one stays inside it."""
+def page_boxes(page):
+    """Filled rectangles drawn on the ORIGINAL page (highlights, label boxes): [(rect, fill colour)], always in the same
+    order (top to bottom, then left to right), so «box 3» means the same box in the editor and in the builder."""
     out = []
     try:
         for d in page.get_drawings():
-            if d.get("fill") is not None and d.get("rect") is not None:
-                r = d["rect"]
-                if r.width > 6 and r.height > 4 and r.width < page.rect.width * 0.9:
-                    out.append(r)
+            r, f = d.get("rect"), d.get("fill")
+            if f is not None and r is not None and r.width > 6 and r.height > 4 and r.width < page.rect.width * 0.9:
+                out.append((fitz_rect(*r), tuple(f)[:3]))
     except Exception:
         pass
+    out.sort(key=lambda t: (round(t[0].y0 / 3), t[0].x0))
     return out
+
+
+def _boxes_around(page):
+    return [r for r, _ in page_boxes(page)]
+
+
+def _ring_color(page, r):
+    """The colour just OUTSIDE a box (what is behind it)."""
+    import fitz
+    from collections import Counter
+    try:
+        big = fitz.Rect(r.x0 - 3, r.y0 - 3, r.x1 + 3, r.y1 + 3) & page.rect
+        px = page.get_pixmap(clip=big, dpi=40)
+        w, h, n, data = px.width, px.height, px.n, px.samples
+        cnt = Counter()
+        for y in range(h):
+            for x in range(w):
+                if x <= 1 or y <= 1 or x >= w - 2 or y >= h - 2:
+                    i = (y * w + x) * n
+                    cnt[data[i:i + 3]] += 1
+        return tuple(v / 255 for v in cnt.most_common(1)[0][0])
+    except Exception:
+        return (1, 1, 1)
+
+
+def _edit_boxes(page, boxes, bedit):
+    """Applies the user's edits to the original page's coloured boxes: recolour, move, resize, remove.
+    A drawing cannot be edited in place, so the old box is painted over with what is behind it and a new one is drawn."""
+    import fitz
+    for key, e in (bedit or {}).items():
+        try:
+            r, fill = boxes[int(key)]
+        except (ValueError, IndexError):
+            continue
+        back = _ring_color(page, r)
+        page.draw_rect(fitz.Rect(r.x0 - 0.6, r.y0 - 0.6, r.x1 + 0.6, r.y1 + 0.6), color=None, fill=back, overlay=True)
+        if e.get("del"):
+            continue
+        nr = fitz.Rect(r.x0 + float(e.get("dx", 0)), r.y0 + float(e.get("dy", 0)),
+                       r.x1 + float(e.get("dx", 0)) + float(e.get("dw", 0)), r.y1 + float(e.get("dy", 0)) + float(e.get("dh", 0)))
+        if nr.width > 2 and nr.height > 2:
+            page.draw_rect(nr, color=None, fill=_hex_rgb(e["c"]) if e.get("c") else fill, overlay=True)
+
+
+def render_boxes(src_pdf, pno, out_png, dpi=90):
+    """The ORIGINAL page with every coloured box numbered (the numbers match the list in the editor). -> number of boxes."""
+    import fitz
+    doc = fitz.open(src_pdf)
+    page = doc[pno]
+    boxes = page_boxes(page)
+    for n, (r, _) in enumerate(boxes, 1):
+        page.draw_rect(r, color=(0, 0.35, 0.95), width=1.2)
+        top = r.y0 - 9 if r.y0 > 10 else r.y0
+        page.draw_rect(fitz.Rect(r.x0, top, r.x0 + 8 + 4.2 * len(str(n)), top + 9), color=None, fill=(0, 0.35, 0.95))
+        page.insert_text((r.x0 + 2, top + 7.5), str(n), fontsize=7.5, color=(1, 1, 1))
+    page.get_pixmap(dpi=dpi).save(out_png)
+    doc.close()
+    return len(boxes)
 
 
 def _widen_one_line(scratch, page, rect, body, css, arch, size, align, lo, hi, line_h):
@@ -354,9 +416,10 @@ def build_pdf(src_pdf, units, tgt, out_path, font=None, page_styles=None):
     doc = fitz.open(src_pdf)
     by_page, all_on_page = _units_by_page(units)
     bgs = {int(p): (st or {}).get("bg") for p, st in (page_styles or {}).items() if (st or {}).get("bg")}
+    bxs = {int(p): (st or {}).get("boxes") for p, st in (page_styles or {}).items() if (st or {}).get("boxes")}
     shrunk = 0
-    for pno in sorted(set(by_page) | set(bgs)):
-        shrunk += _apply_page(doc, pno, by_page.get(pno, []), all_on_page.get(pno, []), tgt, font, bgs.get(pno))
+    for pno in sorted(set(by_page) | set(bgs) | set(bxs)):
+        shrunk += _apply_page(doc, pno, by_page.get(pno, []), all_on_page.get(pno, []), tgt, font, bgs.get(pno), bxs.get(pno))
     doc.subset_fonts()
     doc.save(out_path, garbage=3, deflate=True)
     doc.close()
@@ -424,8 +487,8 @@ def build_plan_pdf(src_pdf, entries, units, tgt, out_path=None, font=None, page_
             out.new_page(width=last_size[0], height=last_size[1])
     shrunk = 0
     for idx, p in todo:
-        bg = ((page_styles or {}).get(str(p)) or {}).get("bg")
-        shrunk += _apply_page(out, idx, by_page.get(p, []), all_on_page.get(p, []), tgt, font, bg)
+        ps = (page_styles or {}).get(str(p)) or {}
+        shrunk += _apply_page(out, idx, by_page.get(p, []), all_on_page.get(p, []), tgt, font, ps.get("bg"), ps.get("boxes"))
     info = {"pages": len(out), "shrunk_blocks": shrunk}
     if png:
         out[0].get_pixmap(dpi=dpi).save(png)
@@ -441,9 +504,10 @@ def preview_page(src_pdf, units, tgt, pno, out_png, font=None, dpi=100, page_sty
     import fitz
     doc = fitz.open(src_pdf)
     by_page, all_on_page = _units_by_page(units)
-    bg = ((page_styles or {}).get(pno) or (page_styles or {}).get(str(pno)) or {}).get("bg")
-    if pno in by_page or bg:
-        _apply_page(doc, pno, by_page.get(pno, []), all_on_page.get(pno, []), tgt, font, bg)
+    ps = (page_styles or {}).get(pno) or (page_styles or {}).get(str(pno)) or {}
+    bg, bx = ps.get("bg"), ps.get("boxes")
+    if pno in by_page or bg or bx:
+        _apply_page(doc, pno, by_page.get(pno, []), all_on_page.get(pno, []), tgt, font, bg, bx)
     doc[pno].get_pixmap(dpi=dpi).save(out_png)
     doc.close()
 

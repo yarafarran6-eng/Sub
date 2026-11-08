@@ -1,6 +1,6 @@
 """The manual translation screen: a bar that is always visible, four tabs, and the wiring of every button."""
 import gradio as gr
-from . import h_files, h_output, h_pages, h_text, panel, screen_edit, screen_export, screen_file, screen_pages
+from . import h_boxes, h_files, h_output, h_pages, h_text, panel, screen_edit, screen_export, screen_file, screen_pages
 from .consts import SLOTS
 from .reg import C, R, put
 from .view import file_choices, view
@@ -138,6 +138,10 @@ def _wire(tabs):
     C["b_peek"].click(h_pages.peek, [C["pid"], C["did"], C["pg_target"]], ALL)
 
     # ---- manage the page that is open in the translation tab
+    C["b_bx_show"].click(h_boxes.show, [C["pid"], C["did"], C["cur"]], [C["bx_img"], C["bx_pick"], C["bx_info"]])
+    C["b_bx_apply"].click(h_boxes.apply, [C["pid"], C["did"], C["cur"], C["bx_pick"], C["bx_con"], C["bx_c"], C["bx_dx"], C["bx_dy"], C["bx_dw"], C["bx_dh"]], ALL)
+    C["b_bx_del"].click(h_boxes.remove, [C["pid"], C["did"], C["cur"], C["bx_pick"]], ALL)
+    C["b_bx_rst"].click(h_boxes.restore, [C["pid"], C["did"], C["cur"], C["bx_pick"]], ALL)
     C["b_cp_move"].click(h_pages.cur_move, [C["pid"], C["did"], C["cur"], C["cp_to"]], ALL)
     ask(C["b_cp_del"], "cpdel", h_pages.cur_ask_delete, [C["pid"], C["did"], C["cur"]])
     yes("cpdel", h_pages.cur_delete, [C["pid"], C["did"], C["cur"]])

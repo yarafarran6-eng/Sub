@@ -568,6 +568,13 @@ def set_pstyle(d, page, **kw):
     return tx.commit()
 
 
+def set_box(d, page, idx, **kw):
+    """Edits of one coloured box of the original page. kw: c (colour), dx, dy, dw, dh, del. Empty values are dropped;
+    no values at all = the box goes back to the original."""
+    val = {k: v for k, v in kw.items() if v not in (None, "", 0, 0.0, False)}
+    return Tx(d, "تعديل صندوق ملوّن").set("pstyle", str(page), "boxes", str(idx), value=val if val else MISSING).commit()
+
+
 def reset_page(d, page, units):
     """Page style + every paragraph style on the page + the background, back to default."""
     tx = Tx(d, "إعادة تعيين تنسيق الصفحة")
