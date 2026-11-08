@@ -76,3 +76,20 @@ html, body { overflow-x: hidden; }
   .tbl, .gradio-container table { display: block; overflow-x: auto; }
   button { min-height: 40px; }
 }
+
+/* chat: conversations list */
+.offscreen { position: absolute !important; left: -9999px !important; width: 1px; height: 1px; overflow: hidden; opacity: 0; }
+.chat-top { align-items: end; }
+.cm-burger { font-size: 22px !important; }
+.cm-side { border-inline-end: 1px solid var(--border-color-primary, #e2e8f0); padding-inline-end: 8px; }
+.cm-list { display: flex; flex-direction: column; gap: 2px; max-height: 460px; overflow-y: auto; }
+.cm-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 8px 10px; border-radius: 10px; cursor: pointer; }
+.cm-row:hover { background: rgba(99,102,241,.10); }
+.cm-row.on { background: rgba(99,102,241,.18); font-weight: 600; }
+.cm-t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.cm-dots { background: transparent; border: 0; font-size: 20px; line-height: 1; cursor: pointer; padding: 2px 8px; border-radius: 8px; color: inherit; }
+.cm-dots:hover { background: rgba(99,102,241,.25); }
+.cm-menu { position: fixed; z-index: 99999; min-width: 180px; background: #1e293b; color: #f1f5f9; border-radius: 12px; padding: 6px; box-shadow: 0 8px 30px rgba(0,0,0,.35); display: flex; flex-direction: column; }
+.cm-menu button { background: transparent; border: 0; color: inherit; text-align: start; padding: 9px 12px; border-radius: 8px; cursor: pointer; font-size: 14px; }
+.cm-menu button:hover { background: rgba(255,255,255,.12); }
+.cm-menu button.danger { color: #fca5a5; }

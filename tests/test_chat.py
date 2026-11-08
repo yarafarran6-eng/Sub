@@ -23,19 +23,22 @@ cid2, scr, _, _, _ = tab_chat.send(cid, {"text": "وش بالملف", "files": [
 assert cid2 == cid and len(chats.load(cid)["msgs"]) == 4
 assert any(isinstance(m["content"], dict) for m in scr), "image displayed"
 
-# open an old chat after starting a new one
+# open an old chat after starting a new one (through the list menu commands)
 new_id, scr, *_ = tab_chat.new_chat()
 assert new_id is None and scr == []
-cid3, _, _, _, _ = tab_chat.send(None, {"text": "محادثة ثانية", "files": []}, "auto", True)
-assert cid3 != cid and len(chats.list_chats()) == 2
-back, scr, title = tab_chat.open_chat(cid)
+cid3, _, _, _, html = tab_chat.send(None, {"text": "محادثة ثانية", "files": []}, "auto", True)
+assert cid3 != cid and len(chats.list_chats()) == 2 and "محادثة ثانية" in html
+back, scr, html = tab_chat.act(cid3, f"open|{cid}")
 assert back == cid and len(scr) >= 4
-
-tab_chat.rename_chat(cid, "اسم جديد"); assert chats.load(cid)["title"] == "اسم جديد"
-try:
-    tab_chat.delete_chat(cid, False); assert False
-except Exception: pass
-tab_chat.delete_chat(cid, True); assert chats.load(cid) is None
+_, _, html = tab_chat.act(cid, f"pin|{cid3}")
+assert chats.list_chats()[0]["id"] == cid3 and "📌" in html          # pinned goes first
+_, _, html = tab_chat.act(cid, f"pin|{cid}")
+assert sum(c.get("pinned", False) for c in chats.list_chats()) == 2   # more than one pinned
+_, _, html = tab_chat.act(cid, f"pin|{cid3}")
+assert not chats.load(cid3).get("pinned")
+tab_chat.act(cid, f"rename|{cid}|اسم | جديد"); assert chats.load(cid)["title"] == "اسم | جديد"
+cur, scr, html = tab_chat.act(cid, f"delete|{cid}")
+assert chats.load(cid) is None and cur is None and scr == []
 
 # content blocks answer
 class R: pass

@@ -6,5 +6,5 @@ import app
 from core import auth, keystore
 auth.must_change = lambda: False
 keystore.add_key("mock", "mock-1")
-app.demo.queue().launch(server_port=7990, css=app.CSS, js=app.PASTE_JS, theme=app.THEME, show_error=True, prevent_thread_lock=True)
+app.demo.queue().launch(server_port=7990, css=app.CSS, js=app.JS, theme=app.THEME, show_error=True, prevent_thread_lock=True)
 time.sleep(int(os.getenv("SERVE_SECONDS", "600")))

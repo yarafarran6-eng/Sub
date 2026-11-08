@@ -9,6 +9,9 @@ from ui.common import CSS, THEME
 from ui.header import banner_html, hero_html
 
 
+JS = "() => { (" + PASTE_JS.strip().rstrip(";") + ")();\n" + tab_chat.CHAT_JS + " }"   # page scripts: numbered paste + chat list menu
+
+
 def tick(jid):
     return hero_html(), banner_html(), monitor.jobs_html(), monitor.monitor_html(jid), monitor.keys_html(), monitor.events_html()
 
@@ -38,7 +41,7 @@ with gr.Blocks(title="مترجم الروايات") as demo:
 if __name__ == "__main__":
     jobs.recover()
     kw = dict(server_name=os.getenv("HOST") or ("0.0.0.0" if os.getenv("SPACE_ID") else "127.0.0.1"),
-              server_port=int(os.getenv("PORT", "7860")), auth=auth.check, css=CSS, js=PASTE_JS, max_file_size="200mb", show_error=True)
+              server_port=int(os.getenv("PORT", "7860")), auth=auth.check, css=CSS, js=JS, max_file_size="200mb", show_error=True)
     try:
         demo.queue(default_concurrency_limit=8).launch(theme=THEME, **kw)
     except TypeError:

@@ -39,11 +39,22 @@ def list_chats():
         c = read_json(f, None)
         if c:
             out.append(c)
-    return sorted(out, key=lambda c: c.get("updated", 0), reverse=True)
+    return sorted(out, key=lambda c: (bool(c.get("pinned")), c.get("updated", 0)), reverse=True)
 
 
 def choices():
     return [(f"{c['title']} · {time.strftime('%d/%m %H:%M', time.localtime(c.get('updated', 0)))}", c["id"]) for c in list_chats()]
+
+
+def toggle_pin(cid):
+    c = load(cid)
+    if c:
+        c["pinned"] = not c.get("pinned")
+        updated = c["updated"]
+        save(c)
+        c["updated"] = updated          # pinning is not new activity
+        write_json(_file(cid), c)
+    return bool(c and c.get("pinned"))
 
 
 def delete(cid):

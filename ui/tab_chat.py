@@ -1,4 +1,5 @@
 """Tab 5: chat with the AIs about anything. Pick one, switch any time; when its limit ends the next one in your priority answers."""
+import html as _h
 import time
 import gradio as gr
 from core import chats, llm, priority
@@ -39,8 +40,15 @@ def _screen(chat):
     return chats.to_display(chat["msgs"]) if chat else []
 
 
-def _list(cid):
-    return gr.update(choices=chats.choices(), value=cid)
+def list_html(cid=None):
+    """The conversations list: only names, each with a ⋯ button (the menu is drawn by CHAT_JS)."""
+    rows = []
+    for c in chats.list_chats():
+        cls = "cm-row" + (" on" if c["id"] == cid else "")
+        pin = "📌 " if c.get("pinned") else ""
+        rows.append(f"<div class='{cls}' data-id='{c['id']}' data-pinned='{int(bool(c.get('pinned')))}' data-title='{_h.escape(c['title'], True)}'>"
+                    f"<span class='cm-t'>{pin}{_h.escape(c['title'])}</span><button class='cm-dots' title='خيارات'>⋯</button></div>")
+    return "<div class='cm-list'>" + ("".join(rows) or "<div class='empty'>ما فيه محادثات بعد</div>") + "</div>"
 
 
 @safe
@@ -92,68 +100,107 @@ def send(cid, mm, model, fb):
     chats.save(chat)
     if len({c["id"] for c in route["calls"]}) > 1:
         gr.Info("انتهى حد الذكاء السابق، فرد عليك التالي في ترتيب الأولوية.", title="🔁 تحوّل تلقائي")
-    return chat["id"], _screen(chat), None, remaining_html(), _list(chat["id"])
+    return chat["id"], _screen(chat), None, remaining_html(), list_html(chat["id"])
 
 
 def new_chat():
-    return None, [], None, _list(None), ""
-
-
-def open_chat(cid):
-    chat = chats.load(cid)
-    return (cid if chat else None), _screen(chat), (chat or {}).get("title", "")
+    return None, [], None, list_html(None)
 
 
 @safe
-def delete_chat(cid, ok):
-    if not cid:
-        raise gr.Error("افتح محادثة أولاً", title="ما فيه محادثة")
-    if not ok:
-        raise gr.Error("علّم مربع «أأكد الحذف» أولاً", title="لم يتم الحذف")
-    chats.delete(cid)
-    return None, [], _list(None), False, ""
-
-
-@safe
-def rename_chat(cid, title):
-    if not cid:
-        raise gr.Error("افتح محادثة أولاً", title="ما فيه محادثة")
-    chats.rename(cid, title)
-    return _list(cid)
+def act(cid, cmd):
+    """One command from the list menu: open|id, pin|id, rename|id|new name, delete|id (the page already asked for confirmation)."""
+    parts = (cmd or "").split("|", 2)
+    if len(parts) < 2 or not parts[1]:
+        return cid, gr.update(), list_html(cid)
+    what, target = parts[0], parts[1]
+    if what == "open":
+        chat = chats.load(target)
+        return (target if chat else None), _screen(chat), list_html(target if chat else None)
+    if what == "pin":
+        on = chats.toggle_pin(target)
+        gr.Info("تم تثبيت المحادثة" if on else "أُلغي التثبيت", title="📌")
+    elif what == "rename" and len(parts) == 3:
+        chats.rename(target, parts[2])
+    elif what == "delete":
+        chats.delete(target)
+        if target == cid:
+            return None, [], list_html(None)
+    return cid, gr.update(), list_html(cid)
 
 
 def choices():
     return priority.choices("any", True, "حسب ترتيب الأولوية في الإعدادات")
 
 
+CHAT_JS = """
+(() => {
+  const act = (cmd) => {
+    const t = document.querySelector('#chat_cmd textarea, #chat_cmd input');
+    const b = document.querySelector('#chat_go');
+    if (!t || !b) return;
+    t.value = cmd; t.dispatchEvent(new Event('input', {bubbles: true}));
+    setTimeout(() => b.click(), 60);
+  };
+  const close = () => document.querySelectorAll('.cm-menu').forEach(m => m.remove());
+  document.addEventListener('click', (e) => {
+    const dots = e.target.closest('.cm-dots'), row = e.target.closest('.cm-row');
+    const item = e.target.closest('.cm-menu button');
+    if (item) {
+      const id = item.dataset.id, a = item.dataset.a; close();
+      if (a === 'rename') { const n = prompt('الاسم الجديد للمحادثة:', item.dataset.title); if (n && n.trim()) act('rename|' + id + '|' + n.trim()); }
+      else if (a === 'delete') { if (confirm('تحذف هذي المحادثة؟ ما تقدر ترجعها بعد الحذف.')) act('delete|' + id); }
+      else act('pin|' + id);
+      return;
+    }
+    close();
+    if (dots && row) {
+      e.stopPropagation();
+      const r = dots.getBoundingClientRect(), m = document.createElement('div');
+      m.className = 'cm-menu'; const id = row.dataset.id, pinned = row.dataset.pinned === '1';
+      m.innerHTML = `<button data-a="rename" data-id="${id}" data-title="">✏ تغيير الاسم</button>` +
+        `<button data-a="pin" data-id="${id}">${pinned ? '📌 إلغاء التثبيت' : '📌 تثبيت المحادثة'}</button>` +
+        `<button data-a="delete" data-id="${id}" class="danger">🗑 حذف</button>`;
+      m.querySelector('[data-a=rename]').dataset.title = row.dataset.title;
+      m.style.top = (r.bottom + 4) + 'px'; m.style.left = Math.max(8, Math.min(r.left, innerWidth - 190)) + 'px';
+      document.body.appendChild(m);
+    } else if (row) act('open|' + row.dataset.id);
+  });
+})();
+"""
+
+
+def toggle_menu(shown):
+    return not shown, gr.update(visible=not shown)
+
+
 def build():
     with gr.Tab("٥. 💬 تحدث مع الذكاء الاصطناعي") as tab:
         gr.HTML("<div class='step'><i>💬</i>تحدث مع الذكاء الاصطناعي في أي موضوع</div>"
-                "<p class='hint'>كل محادثة تنحفظ، وتقدر ترجع لها من القائمة. ترفع صور وملفات (pdf، txt، docx...). "
+                "<p class='hint'>كل محادثة تنحفظ، وتفتح القائمة (☰) وترجع لها. ترفع صور وملفات (pdf، txt، docx...). "
                 "الذكاء هنا يكتب نص فقط: ما ينشئ صور ولا فيديو ولا صوت، والصوت والفيديو ما نقدر نرفعهم.</p>")
         cid = gr.State(None)
+        shown = gr.State(False)
+        with gr.Row(elem_classes="chat-top"):
+            b_menu = gr.Button("☰", elem_classes="cm-burger", scale=0, min_width=52)
+            model = gr.Dropdown(choices(), value="auto", label="أكلم", scale=3)
+            fb = gr.Checkbox(True, label="إذا انتهى حده كمّل بترتيب الأولوية", scale=2)
         with gr.Row():
-            with gr.Column(scale=1, min_width=230):
+            with gr.Column(scale=1, min_width=240, visible=False, elem_classes="cm-side") as side:
+                gr.Markdown("### المحادثات")
                 b_new = gr.Button("➕ محادثة جديدة", variant="primary")
-                hist = gr.Dropdown(chats.choices(), value=None, label="المحادثات السابقة", info="اختر محادثة لتفتحها")
-                title = gr.Textbox(label="اسم المحادثة", lines=1, rtl=True)
-                b_ren = gr.Button("✏ غيّر الاسم", size="sm")
-                with gr.Row():
-                    ok = gr.Checkbox(False, label="أأكد الحذف")
-                    b_del = gr.Button("🗑 احذف", size="sm", variant="stop")
+                hist = gr.HTML(list_html)
             with gr.Column(scale=3):
-                with gr.Row():
-                    model = gr.Dropdown(choices(), value="auto", label="أكلم", scale=3)
-                    fb = gr.Checkbox(True, label="إذا انتهى حده كمّل بترتيب الأولوية", scale=2)
                 chat = gr.Chatbot(height=480, rtl=True, show_label=False, render_markdown=True, sanitize_html=True, buttons=["copy"])
                 box = gr.MultimodalTextbox(placeholder="اكتب رسالتك، أو ارفع صورة/ملف، ثم Enter", show_label=False, rtl=True, lines=2,
                                            file_count="multiple", file_types=["image", ".pdf", ".txt", ".md", ".csv", ".json", ".docx"])
+        cmd = gr.Textbox(elem_id="chat_cmd", elem_classes="offscreen", label="cmd")
+        go = gr.Button("go", elem_id="chat_go", elem_classes="offscreen")
         gr.Markdown("### المتبقي من حد كل ذكاء")
         left = gr.HTML(remaining_html())
+    b_menu.click(toggle_menu, shown, [shown, side])
     box.submit(send, [cid, box, model, fb], [cid, chat, box, left, hist])
-    b_new.click(new_chat, None, [cid, chat, box, hist, title])
-    hist.input(open_chat, hist, [cid, chat, title])
-    b_ren.click(rename_chat, [cid, title], hist)
-    b_del.click(delete_chat, [cid, ok], [cid, chat, hist, ok, title])
-    tab.select(lambda: (gr.update(choices=choices()), remaining_html(), _list(None) if False else gr.update(choices=chats.choices())), None, [model, left, hist])
+    b_new.click(new_chat, None, [cid, chat, box, hist])
+    go.click(act, [cid, cmd], [cid, chat, hist])
+    tab.select(lambda c: (gr.update(choices=choices()), remaining_html(), list_html(c)), cid, [model, left, hist])
     return {"model": model, "left": left}
