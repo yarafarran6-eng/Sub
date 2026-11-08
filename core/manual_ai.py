@@ -36,12 +36,20 @@ def build_context(texts, style=""):
     return glossary.build_context(units, "auto", "ar", style)
 
 
-def read_image(png_bytes):
-    """Asks a vision-capable key to read the text in a picture. The picture is sent to that service."""
+def read_image(png_bytes, hint=""):
+    """Asks a vision-capable key to read the text in a picture. The picture is sent to that service.
+    hint: names and terms of the book (glossary / context), so the same name is spelled the same way every time."""
     b64 = base64.b64encode(png_bytes).decode()
+    prompt = ("Transcribe the text in this image exactly as written, in its original language and script.\n"
+              "- Read ONLY the text that is fully inside the picture; ignore partly cut lines at the top or bottom edge.\n"
+              "- Copy every letter exactly (final alef, hamza, taa marbuta, dots); do not correct, modernise or guess spelling.\n"
+              "- Join the lines of ONE paragraph with spaces. Do not add anything.\n"
+              "Return only the text, nothing else.")
+    if (hint or "").strip():
+        prompt += ("\n\nNames and terms that appear in this book (use exactly this spelling when the picture shows the same name):\n"
+                   + hint.strip()[:1500])
     msgs = [{"role": "user", "content": [
-        {"type": "text", "text": "Transcribe the text in this image exactly as written, in its original language and script. "
-                                 "Return only the text, nothing else. Join the lines of a paragraph with spaces."},
+        {"type": "text", "text": prompt},
         {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}}]}]
     avoid, last = set(), ""
     for _ in range(5):

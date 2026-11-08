@@ -363,11 +363,23 @@ def build_pdf(src_pdf, units, tgt, out_path, font=None, page_styles=None):
     return {"pages": len(by_page), "shrunk_blocks": shrunk}
 
 
-def crop_png(src_pdf, pno, bbox, dpi=200, margin=4):
+def crop_png(src_pdf, pno, bbox, dpi=250, margin=2, mask=None):
+    """The paragraph as a picture. mask: boxes of the OTHER paragraphs on the page, painted white first, so a
+    neighbouring line that peeks into the crop is not read as part of this paragraph."""
     import fitz
     doc = fitz.open(src_pdf)
     page = doc[pno]
-    r = fitz.Rect(bbox[0] - margin, bbox[1] - margin, bbox[2] + margin, bbox[3] + margin) & page.rect
+    me = fitz.Rect(bbox)
+    r = fitz.Rect(me.x0 - margin, me.y0 - margin, me.x1 + margin, me.y1 + margin) & page.rect
+    for b in mask or []:
+        o = fitz.Rect(b)
+        if o.is_empty or not o.intersects(r):
+            continue
+        o = fitz.Rect(o.x0 + 1.5, o.y0 + 1.5, o.x1 - 1.5, o.y1 - 1.5)
+        inter = o & me
+        if o.is_empty or (not inter.is_empty and inter.get_area() > 0.25 * me.get_area()):
+            continue                          # it covers most of this paragraph itself: leave it alone
+        page.draw_rect(o, color=None, fill=(1, 1, 1), overlay=True)
     data = page.get_pixmap(clip=r, dpi=dpi).tobytes("png")
     doc.close()
     return data

@@ -5,6 +5,7 @@ import gradio as gr
 from core import builder, editor, manual, manual_ai, priority
 from core.pool import NoKeys
 from ui.common import guard, safe, toast
+from core import textcheck
 from .consts import SLOTS
 from .data import autosave, cur_items, items_now, load_all, need, orig_page
 from .reg import R
@@ -114,14 +115,27 @@ def _review(pid, did, pairs, route):
     return fixed
 
 
+def _names_hint(d, units):
+    """What the book already tells us about spelling: the context/glossary of the draft and a little readable text."""
+    parts = [(d.get("ctx") or "").strip()[:900]]
+    good = [u.get("text", "") for u in units if u.get("kind") == "text" and 40 < len(u.get("text", "")) < 400
+            and not textcheck.garbled(u.get("text", ""))][:4]
+    if good:
+        parts.append("Sample of readable text from the book:\n" + "\n".join(good))
+    return "\n\n".join(p for p in parts if p)
+
+
 def _ocr_items(pid, did, items):
     meta, units, d = load_all(pid, did)
     by = {u["id"]: u for u in units}
     src = manual.source_path(pid)
 
+    hint = _names_hint(d, units)
+
     def one(it):
         u = by[it["uid"]]
-        return it["uid"], manual_ai.read_image(builder.crop_png(src, u["page"], u["bbox"]))
+        mask = [v["bbox"] for v in units if v is not u and v.get("page") == u["page"] and v.get("bbox")]
+        return it["uid"], manual_ai.read_image(builder.crop_png(src, u["page"], u["bbox"], mask=mask), hint)
     try:
         with ThreadPoolExecutor(4) as ex:
             results = list(ex.map(one, [i for i in items if i["uid"] in by]))
