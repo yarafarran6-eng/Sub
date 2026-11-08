@@ -49,4 +49,11 @@ try:
 except Exception as e:
     assert "الصور" in str(e) or "Error" in type(e).__name__, e
 assert len(chats.list_chats()) == 1, "failed message not saved"
+# image first answered by a vision key, then thanks sent to a text-only key
+for k in keystore.load_keys(): keystore.delete_key(k["id"])
+keystore.add_key("mock", "mock-vision1"); c, *_ = tab_chat.send(None, {"text": "اقرأ", "files": [img]}, "auto", True)
+for k in keystore.load_keys(): keystore.delete_key(k["id"])
+keystore.add_key("mock", "mock-novision2")
+c2, scr, *_ = tab_chat.send(c, {"text": "شكرا", "files": []}, "auto", True)
+assert "النص فقط" in scr[-1]["content"], scr[-1]
 print("chat OK")

@@ -103,7 +103,7 @@ def _mock(key, messages, task):
         return "\n".join(out)
     if task == "chat":
         last = messages[-1]["content"]
-        if isinstance(last, list) and key["key"].startswith("mock-novision"):
+        if key["key"].startswith("mock-novision") and any(isinstance(m["content"], list) for m in messages):
             raise BadRequest("400: image input is not supported by this model")
         if isinstance(last, list):
             last = " ".join(b.get("text", "[صورة]") if b.get("type") == "text" else "[صورة]" for b in last)

@@ -58,34 +58,40 @@ def send(cid, mm, model, fb):
     chat["msgs"].append({"role": "user", "text": text, "files": kept})
     if chat["title"] == "محادثة جديدة":
         chat["title"] = (text or kept[0]["name"])[:40]
-    has_img = any(f["kind"] == "image" for f in kept)
     route = priority.new_route("translate", model or priority.AUTO, bool(fb), max_wait=45)
     if not model or model == priority.AUTO:             # chat may use any key, in the translating priority order
         route = {**route, "order": priority.order_for("translate") or priority.order_for("edit")}
-    api = chats.to_api(chat["msgs"][-24:], SYSTEM)
-    meta, avoid, answer = {}, set(), None
+    recent = chat["msgs"][-24:]
+    has_img = any(f["kind"] == "image" for m in recent[-6:] for f in m.get("files", []))
+    meta, avoid, answer, stripped = {}, set(), None, False
     try:
         with use_route(route):
-            for _ in range(5):
-                try:
-                    answer = call(api, role="any", max_tokens=2048, temperature=0.7, task="chat", avoid=avoid, meta=meta)
-                    break
-                except llm.BadRequest as e:
-                    if not has_img:
-                        raise
-                    avoid.add(getattr(e, "key_id", ""))
+            if has_img:                                      # pictures in the recent messages: find an AI that understands them
+                api = chats.to_api(recent, SYSTEM)
+                for _ in range(5):
+                    try:
+                        answer = call(api, role="any", max_tokens=2048, temperature=0.7, task="chat", avoid=avoid, meta=meta)
+                        break
+                    except llm.BadRequest as e:
+                        avoid.add(getattr(e, "key_id", ""))
+            if answer is None:
+                if has_img and any(f["kind"] == "image" for f in kept):
+                    chat["msgs"].pop()                       # the new message itself has a picture and nobody can read it
+                    raise gr.Error("الذكاء اللي اخترته يقرأ النص فقط ولا يفهم الصور (مثل qwen2.5:7b). اختر ذكاء يدعم الصور مثل Gemini، أو في Ollama نزّل نموذج llava أو qwen2.5vl.",
+                                   title="الصور غير مدعومة")
+                # no picture in the new message: answer from the text only (the earlier answer already describes the picture)
+                stripped = has_img
+                answer = call(chats.to_api(recent, SYSTEM, keep_images=0), role="any", max_tokens=2048, temperature=0.7, task="chat", meta=meta)
     except NoKeys as e:
         chat["msgs"].pop()
         raise gr.Error(str(e), title="ما فيه ذكاء يرد الآن")
     except llm.BadRequest as e:
         chat["msgs"].pop()
         raise gr.Error(f"الذكاء رفض الطلب: {e}", title="رفض الطلب")
-    if answer is None:
-        chat["msgs"].pop()
-        raise gr.Error("الذكاء اللي اخترته يقرأ النص فقط ولا يفهم الصور (مثل qwen2.5:7b). اختر ذكاء يدعم الصور مثل Gemini، أو في Ollama نزّل نموذج llava أو qwen2.5vl.",
-                       title="الصور غير مدعومة")
     k = next((x for x in load_keys() if x["id"] == meta.get("key_id")), None)
     note = f"{meta.get('name', '?')} ({meta.get('model') or 'تلقائي'}) · {meta.get('secs', 0):.1f} ثانية" + (f" · {priority.brief_limit(k)}" if k else "")
+    if stripped:
+        note += " · رد من النص فقط (هذا الذكاء ما يشوف الصور)"
     chat["msgs"].append({"role": "assistant", "text": answer, "note": note})
     chats.save(chat)
     if len({c["id"] for c in route["calls"]}) > 1:
