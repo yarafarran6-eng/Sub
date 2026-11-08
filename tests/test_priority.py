@@ -5,6 +5,13 @@ import warnings; warnings.filterwarnings("ignore")
 import gradio as gr
 from core import keystore, priority, pool, manual, auth
 auth.must_change = lambda: False
+
+
+def S(cid, mm, model, fb):
+    from ui import tab_chat
+    return tab_chat.send(cid, mm, model, fb, False, "عادي", False, "")
+
+
 a = keystore.add_key("mock", "mock-a", label="جيميناي"); b = keystore.add_key("mock", "mock-b", label="غروك"); c = keystore.add_key("mock", "mock-c", label="أولاما")
 ids = [k["id"] for k in keystore.load_keys()]
 G, X, O = ids
@@ -39,8 +46,8 @@ r = h_text.review_slot(pid, did, 0, 0, 1, "auto", True, "review", "auto", True)
 r = h_text.review_page(pid, did, 0, 0, "auto", True, "review", "auto", True)
 # chat
 from ui import tab_chat
-_c, h, _, tbl, _ = tab_chat.send(None, {"text": "مرحبا", "files": []}, "auto", True); assert h[-1]["role"] == "assistant" and "ثانية" in h[-1]["content"]; print(h[-1]["content"][-90:])
-_c, h, _, _, _ = tab_chat.send(_c, {"text": "وش الحال", "files": []}, G, False); print(h[-1]["content"][-60:])
+_c, h, _, tbl, _ = S(None, {"text": "مرحبا", "files": []}, "auto", True); assert h[-1]["role"] == "assistant" and "ثانية" in h[-1]["content"]; print(h[-1]["content"][-90:])
+_c, h, _, _, _ = S(_c, {"text": "وش الحال", "files": []}, G, False); print(h[-1]["content"][-60:])
 from ui import tab_settings
 print(tab_settings.save_priority(G, X, "", "", "", O, "", "", "", ""), priority.get_order("translate"), priority.get_order("edit"))
 print("OK")

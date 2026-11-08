@@ -46,6 +46,27 @@ def choices():
     return [(f"{c['title']} · {time.strftime('%d/%m %H:%M', time.localtime(c.get('updated', 0)))}", c["id"]) for c in list_chats()]
 
 
+def search(q):
+    q = (q or "").strip().lower()
+    if not q:
+        return list_chats()
+    return [c for c in list_chats() if q in c["title"].lower() or any(q in m.get("text", "").lower() for m in c["msgs"])]
+
+
+def export_md(chat):
+    out = [f"# {chat['title']}", ""]
+    for m in chat["msgs"]:
+        who = "أنا" if m["role"] == "user" else "الذكاء"
+        files = "".join(f"\n📎 {f['name']}" for f in m.get("files", []))
+        out += [f"**{who}:**{files}", "", m.get("text", ""), ""]
+        for i, s in enumerate(m.get("sources", []), 1):
+            out.append(f"- [{i}] [{s['title']}]({s['url']})")
+        out.append("")
+    p = DIR / chat["id"] / "chat.md"
+    p.write_text("\n".join(out), encoding="utf-8")
+    return str(p)
+
+
 def toggle_pin(cid):
     c = load(cid)
     if c:
@@ -136,6 +157,8 @@ def to_display(msgs):
         docs = [f["name"] for f in m.get("files", []) if f["kind"] == "doc"]
         if docs:
             text = "📎 " + "، ".join(docs) + ("\n\n" + text if text else "")
+        if m.get("sources"):
+            text += "\n\n**المصادر:**\n" + "\n".join(f"{i}. [{s['title']}]({s['url']})" for i, s in enumerate(m["sources"], 1))
         if m.get("note"):
             text += f"\n\n<sub>{m['note']}</sub>"
         if text.strip():
