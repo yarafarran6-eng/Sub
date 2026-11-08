@@ -63,3 +63,16 @@ button[role=tab]{font-weight:700!important;font-size:1.02em!important}
 .stylepanel{position:sticky;top:6px;align-self:flex-start;max-height:96vh;overflow-y:auto}
 /* the loading veil must never block clicks or hide the page while a handler runs */
 [data-testid=status-tracker].wrap.default,.wrap.default.full{pointer-events:none!important;background:transparent!important}
+
+/* phone: nothing wider than the screen, tabs scroll sideways, side-by-side blocks stack */
+html, body { overflow-x: hidden; }
+.gradio-container, .gradio-container .main, .gradio-container .wrap { max-width: 100vw !important; min-width: 0 !important; }
+.tab-wrapper, .tab-container, [role=tablist] { overflow-x: auto !important; flex-wrap: nowrap; scrollbar-width: thin; }
+@media (max-width: 760px) {
+  .gradio-container .row, .gradio-container .form { flex-wrap: wrap !important; }
+  .gradio-container .row > *, .gradio-container .column { min-width: 100% !important; flex-basis: 100% !important; }
+  .hero { flex-wrap: wrap; gap: 8px; }
+  .hero h1 { font-size: 20px; }
+  .tbl, .gradio-container table { display: block; overflow-x: auto; }
+  button { min-height: 40px; }
+}

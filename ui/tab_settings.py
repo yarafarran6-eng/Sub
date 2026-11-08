@@ -26,7 +26,11 @@ def change_password(old, new):
     return msg
 
 
-N_PRIO = 5
+N_PRIO = 40          # slots that exist; only as many as your AIs are shown
+
+
+def _shown():
+    return max(1, min(N_PRIO, len(load_keys())))
 
 
 def _key_opts():
@@ -39,7 +43,7 @@ def _prio_values(role):
 
 
 def save_priority(*vals):
-    """vals = 5 slots of translating then 5 slots of checking."""
+    """vals = N_PRIO slots of translating then N_PRIO slots of checking."""
     tr = priority.set_order("translate", list(vals[:N_PRIO]))
     ed = priority.set_order("edit", list(vals[N_PRIO:]))
     gr.Info(f"حُفظ الترتيب: الترجمة {len(tr)} ذكاء، التدقيق {len(ed)} ذكاء.", title="✅ حُفظ ترتيب الأولوية")
@@ -48,7 +52,8 @@ def save_priority(*vals):
 
 def refresh_priority():
     opts = _key_opts()
-    return [gr.update(choices=opts, value=v) for v in _prio_values("translate") + _prio_values("edit")]
+    n = _shown()
+    return [gr.update(choices=opts, value=v, visible=i % N_PRIO < n) for i, v in enumerate(_prio_values("translate") + _prio_values("edit"))]
 
 
 def build():
@@ -56,7 +61,7 @@ def build():
         step("أ", "ترتيب أولوية الذكاء الاصطناعي", "رتّب الذكاءات اللي أضفتها: الأول يشتغل، وإذا انتهى حده يتحول تلقائياً للثاني ثم الثالث. ترتيب للترجمة وترتيب للتدقيق.")
         opt("ترتيب الأولوية", "تحدد من يترجم أولاً ومن يدقق أولاً، ومن يكمل لو انتهى حد الأول (حد يومي أو بالدقيقة).",
             "ما تتوقف الترجمة لأن مفتاحاً واحداً خلص، وتقدر تحط الأقوى أول والاحتياطي بعده.",
-            "اختر في كل خانة ذكاءً (الأولوية 1 هي الأعلى) واضغط «حفظ الترتيب». اترك الخانات الزائدة «بدون». "
+            "اختر في كل خانة ذكاءً (الأولوية 1 هي الأعلى) واضغط «حفظ الترتيب». عدد الخانات يساوي عدد مفاتيحك، وتزيد لما تضيف مفتاح (تحدّث لما تفتح هذا التبويب). اترك اللي ما تبيه «بدون». "
             "المفاتيح اللي ما حطيتها في القائمة تُستخدم فقط كحل أخير لو انتهت كل مفاتيحك المرتبة.")
         prio = []
         with gr.Row():
@@ -64,7 +69,7 @@ def build():
                 with gr.Column():
                     gr.Markdown(f"**{title}**")
                     for i, v in enumerate(_prio_values(role)):
-                        prio.append(gr.Dropdown(_key_opts(), value=v, label=f"الأولوية {i + 1}", interactive=True))
+                        prio.append(gr.Dropdown(_key_opts(), value=v, label=f"الأولوية {i + 1}", interactive=True, visible=i < _shown()))
         b_prio = gr.Button("💾 حفظ الترتيب", variant="primary")
         prio_msg = gr.Markdown()
         step("ب", "اسم المستخدم", "الاسم اللي تكتبه في شاشة الدخول. لو تركته فارغاً يكفي كلمة السر للدخول.")
