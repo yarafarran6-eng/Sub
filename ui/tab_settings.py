@@ -67,7 +67,7 @@ def do_check():
     except updater.UpdateError as e:
         gr.Warning(str(e), title="تعذّر الفحص")
         return f"<div class='bad'>⚠ {e}</div>", gr.update(), gr.update(visible=False)
-    latest = f"آخر تحديث على GitHub: «{r['latest']['message']}» ({r['latest']['date']})"
+    latest = f"آخر تحديث على GitHub: «{r['latest']['message']}» ({r['latest']['date']})" if r["latest"]["message"] else ""
     if r["up_to_date"]:
         return f"<div class='ok'>✅ نسختك هي الأحدث. {latest}</div>", gr.update(interactive=True), gr.update(visible=False)
     n = len(r["changed"]) + len(r["new"])

@@ -41,17 +41,30 @@ assert (site / "extra_local.txt").read_text() == "mine"
 assert updater.check()["up_to_date"]
 assert updater.apply()["written"] == []
 
+# GitHub API blocked / rate limited -> the check still works by comparing with the downloaded zip
+(site / "ui" / "brand_new.py").unlink(); (site / "core" / "chats.py").write_text("# old again\n")
+def api_down(): raise updater.UpdateError("GitHub حدّ عدد الطلبات من شبكتك.")
+real_tree = updater._api_tree; updater._api_tree = api_down; updater._zip_cache.clear()
+r2 = updater.check()
+assert r2["changed"] == ["core/chats.py"] and r2["new"] == ["ui/brand_new.py"], r2
+assert len(updater.apply(r2)["written"]) == 2 and updater.check()["up_to_date"]
+updater._api_tree = real_tree
+
 # a bad path inside the answer must never write outside the folder
 updater._api_tree = lambda: {"tree": [{"type": "blob", "path": "../evil.py", "sha": "1"}]}
 assert updater.apply(updater.check())["written"] == []
 assert not (tmp / "evil.py").exists()
 
-# network failure -> a clear message
+# secure connection broken (filter / antivirus) -> falls back to curl; both broken -> clear message with the details
 def boom(*a, **k):
-    import httpx; raise httpx.ConnectError("x")
+    import ssl; raise ssl.SSLError("CERTIFICATE_VERIFY_FAILED")
 updater.httpx.get = boom
+updater._curl = lambda url, timeout: b'{"ok": 1}'
+assert updater._get("https://x") == {"ok": 1}
+def curl_fail(url, timeout): raise updater.UpdateError("curl رمز 6")
+updater._curl = curl_fail
 try:
     updater._get("https://x"); assert False
 except updater.UpdateError as e:
-    assert "الإنترنت" in str(e)
+    assert "الإنترنت" in str(e) and "CERTIFICATE_VERIFY_FAILED" in str(e) and "curl رمز 6" in str(e), e
 print("updater OK")
