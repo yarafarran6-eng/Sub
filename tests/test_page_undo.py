@@ -38,7 +38,8 @@ assert manual.load_draft(pid, did)["tr"][p1[0]] == "ترجمة صفحة 2 معد
 # reset page 2 (index 1) to the original: translations, style, added paragraph gone; page 1 untouched
 edit(lambda d: manual.set_text(d, p0[0], "ما تتغير"))
 edit(lambda d: manual.new_extra(d, units, 1, p1[0]))
-q = h_files.ask_reset_page(pid, did, 1); assert "رقم 2" in q[1]
+q = h_files.ask_reset_page(pid, did, 1); assert "الصفحة 2" in q[1] and "ستفقد" in q[1] and "هل أنت متأكد" in q[1]
+assert "ستفقد" in h_files.ask_reset_all(pid)[1] and "كل التعديلات" in h_files.ask_reset_all(pid)[1]
 h_files.reset_page(pid, did, 1, 0)
 d = manual.load_draft(pid, did)
 assert not d["tr"].get(p1[0]) and "1" not in d["pstyle"] and not any(x["page"] == 1 for x in d["extra"].values()), d

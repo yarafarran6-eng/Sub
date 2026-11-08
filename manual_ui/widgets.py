@@ -3,13 +3,13 @@ import gradio as gr
 from .reg import put
 
 
-def danger(name):
+def danger(name, yes_label="نعم، نفّذ"):
     """A confirmation box that sits RIGHT UNDER the button that asked for it (hidden until asked).
     Registers name_g / name_q / name_yes / name_no. The caller wires: ask button -> [name_g, name_q], name_yes -> the real action."""
     with gr.Group(visible=False, elem_classes="confirm") as g:
         q = gr.Markdown()
         with gr.Row():
-            yes = gr.Button("نعم، نفّذ", variant="stop", size="sm")
+            yes = gr.Button(yes_label, variant="stop", size="sm")
             no = gr.Button("لا، إلغاء", size="sm")
     put(name + "_g", g), put(name + "_q", q), put(name + "_yes", yes), put(name + "_no", no)
     no.click(lambda: gr.update(visible=False), None, g)

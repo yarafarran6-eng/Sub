@@ -18,12 +18,12 @@ def build():
         with gr.Row():
             put("b_undo_pg", gr.Button("↩ تراجع عن آخر تغيير في هذه الصفحة", size="sm"))
             put("b_reset_pg", gr.Button("⟲ أعد هذه الصفحة للأصل", size="sm"))
-        danger("resetpg")
+        danger("resetpg", "نعم، متأكد، احذف تعديلات الصفحة")
         gr.HTML("<div class='ub-t'>الملف كله</div>")
         with gr.Row():
             put("b_undo", gr.Button("↩ تراجع عن آخر تغيير (أي صفحة)", size="sm"))
             put("b_resetall", gr.Button("⟲ أعد المسودة كلها للبداية", size="sm"))
-        danger("resetall")
+        danger("resetall", "نعم، متأكد، احذف كل التعديلات")
         with gr.Row():
             put("last", gr.Markdown("لا توجد تغييرات للتراجع عنها"))
             put("saved", gr.Markdown())
@@ -123,7 +123,7 @@ def _wire(tabs):
             C[f"{px}mv_{k}"].click(lambda pid, did, cur, grp, step, k=k, px=px, scope=scope, pn=pn: panel.move(pid, did, cur, grp, scope, pn(grp), k, step, px),
                                    S + [C[px + "step"]], OUT)
     C["bg_preset"].input(lambda pid, did, cur, grp, name: panel.preset(pid, did, cur, grp, panel.PAGE, 1, name), S + [C["bg_preset"]], [C[k] for k in ("bg_mode", "bg_c1", "bg_c2", "bg_dir", "last")])
-    ask(C["b_page_all"], "pageall", lambda pid: (gr.update(visible=True), "هل ترجّع تنسيق الصفحة كلها (خطوط وأحجام وألوان وخلفية ومواضع كل فقراتها) للأصل؟ تقدر تتراجع بعدها."), C["pid"])
+    ask(C["b_page_all"], "pageall", lambda pid: (gr.update(visible=True), "هل أنت متأكد؟ ستفقد كل تنسيقات هذي الصفحة (خطوط وأحجام وألوان وخلفية ومواضع كل فقراتها) وترجع مثل الأصل. ترجماتك تبقى. تقدر تتراجع بزر «تراجع» بعد التنفيذ."), C["pid"])
     yes("pageall", panel.reset_everything, S)
 
     # ---- pages tab
