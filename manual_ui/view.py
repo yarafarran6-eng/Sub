@@ -78,7 +78,8 @@ def view(pid, did, pos, grp, msg=""):
     last = manual.last_label(d)
     out = R(pid=pid, did=did, cur=pos, grp=grp, page=pos + 1, info=info, note=note, pager=pager, pg_target=pos + 1,
             last=f"آخر تغيير: {last}" if last else "لا توجد تغييرات للتراجع عنها",
-            curbar=f"<div class='curbar'><b>الملف:</b> {meta['name']} · <b>المسودة:</b> {d['name']} · <b>الصفحة:</b> {pos + 1} من {len(eff)}</div>")
+            curbar=f"<div class='curbar'><b>الملف:</b> {meta['name']} · <b>المسودة:</b> {d['name']} · <b>الصفحة:</b> {pos + 1} من {len(eff)}</div>",
+            b_grp_prev=u(visible=ngrp > 1), b_grp_next=u(visible=ngrp > 1))
     for i in range(SLOTS):
         if i >= len(items):
             out.update(R(**{f"s{i}_g": u(visible=False)}))
