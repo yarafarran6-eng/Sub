@@ -39,8 +39,8 @@ r = h_text.review_slot(pid, did, 0, 0, 1, "auto", True, "review", "auto", True)
 r = h_text.review_page(pid, did, 0, 0, "auto", True, "review", "auto", True)
 # chat
 from ui import tab_chat
-h, _, tbl = tab_chat.send([], "مرحبا", "auto", True); assert h[-1]["role"] == "assistant" and "ثانية" in h[-1]["content"]; print(h[-1]["content"][-90:])
-h, _, _ = tab_chat.send(h, "وش الحال", G, False); print(h[-1]["content"][-60:])
+_c, h, _, tbl, _ = tab_chat.send(None, {"text": "مرحبا", "files": []}, "auto", True); assert h[-1]["role"] == "assistant" and "ثانية" in h[-1]["content"]; print(h[-1]["content"][-90:])
+_c, h, _, _, _ = tab_chat.send(_c, {"text": "وش الحال", "files": []}, G, False); print(h[-1]["content"][-60:])
 from ui import tab_settings
 print(tab_settings.save_priority(G, X, "", "", "", O, "", "", "", ""), priority.get_order("translate"), priority.get_order("edit"))
 print("OK")

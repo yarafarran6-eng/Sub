@@ -101,6 +101,13 @@ def _mock(key, messages, task):
                     body += " mage 細胞"
                 out.append(f"[{m.group(1)}] «{body.strip()}»")
         return "\n".join(out)
+    if task == "chat":
+        last = messages[-1]["content"]
+        if isinstance(last, list) and key["key"].startswith("mock-novision"):
+            raise BadRequest("400: image input is not supported by this model")
+        if isinstance(last, list):
+            last = " ".join(b.get("text", "[صورة]") if b.get("type") == "text" else "[صورة]" for b in last)
+        return "رد تجريبي على: " + str(last)[:200] + "\n\n- نقطة أولى\n- نقطة ثانية\n\n```python\nprint('hi')\n```"
     if task == "context":
         return json.dumps({"title": "Test", "tone": "neutral", "characters": [
             {"name": "Alice", "target_name": "أليس", "gender": "female"}], "terms": []})
@@ -141,6 +148,8 @@ def chat(key, messages, max_tokens=4096, temperature=0.3, task="translate", time
     if ch.get("finish_reason") == "length":
         raise BadRequest("truncated output")
     text = (ch.get("message") or {}).get("content") or ""
+    if isinstance(text, list):                  # some services answer with content blocks [{"type":"text","text":...}]
+        text = "".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in text)
     u = data.get("usage") or {}
     rl = {h.lower(): v for h, v in r.headers.items() if h.lower().startswith("x-ratelimit")}
     return text, {"in": u.get("prompt_tokens", 0), "out": u.get("completion_tokens", 0), "rl": rl}
