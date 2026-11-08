@@ -97,3 +97,11 @@ html, body { overflow-x: hidden; }
 .cm-tool { background: rgba(99,102,241,.12); border: 0; border-radius: 10px; padding: 8px 14px; cursor: pointer; color: inherit; font-size: 14px; }
 .cm-tool:hover { background: rgba(99,102,241,.25); }
 .cm-tool.on { background: #ef4444; color: #fff; }
+
+/* icons: every emoji of the site is drawn as a line icon (core/icons.js) */
+.ic { display: inline-flex; width: 1.15em; height: 1.15em; vertical-align: -0.2em; margin-inline: 0.2em; flex: none; }
+.ic svg { width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.ic-fill svg { fill: currentColor; }
+.ic-ok { color: #16a34a; } .ic-warn { color: #d97706; } .ic-err { color: #dc2626; }
+.step i .ic, .step i .ic svg { color: #fff; margin: 0; width: 1em; height: 1em; }
+button .ic, .hchip .ic { margin-inline: 0.25em; }

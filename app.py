@@ -1,5 +1,6 @@
 """مترجم الروايات: the entry point. The screen itself lives in `ui/` (the automatic tabs) and `manual_ui/` (the manual editor)."""
 import os
+from pathlib import Path
 import gradio as gr
 from core import auth, jobs, monitor
 from manual_ui import screen as manual_screen
@@ -9,7 +10,8 @@ from ui.common import CSS, THEME
 from ui.header import banner_html, hero_html
 
 
-JS = "() => { (" + PASTE_JS.strip().rstrip(";") + ")();\n" + tab_chat.CHAT_JS + " }"   # page scripts: numbered paste + chat list menu
+ICONS_JS = (Path(__file__).parent / "core" / "icons.js").read_text(encoding="utf-8")
+JS = "() => { (" + PASTE_JS.strip().rstrip(";") + ")();\n" + tab_chat.CHAT_JS + "\n" + ICONS_JS + " }"   # page scripts: numbered paste + chat list menu
 
 
 def tick(jid):
