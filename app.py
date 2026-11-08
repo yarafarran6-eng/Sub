@@ -2,7 +2,7 @@
 import os
 from pathlib import Path
 import gradio as gr
-from core import auth, jobs, monitor
+from core import auth, jobs, launch, monitor
 from manual_ui import screen as manual_screen
 from manual_ui.consts import PASTE_JS
 from ui import tab_chat, tab_keys, tab_review, tab_settings, tab_translate
@@ -41,10 +41,16 @@ with gr.Blocks(title="مترجم الروايات") as demo:
     tab_manual.select(man["refresh"], None, man["refresh_outs"])
 
 if __name__ == "__main__":
+    port = int(os.getenv("PORT", "7860"))
+    if os.getenv("OPEN_BROWSER"):                       # started from the desktop shortcut / start.bat
+        if launch.port_open(port):                      # already running: just show the window, do not start a second copy
+            launch.open_site(f"http://127.0.0.1:{port}")
+            raise SystemExit(0)
+        launch.open_when_ready(port)
     jobs.recover()
     kw = dict(server_name=os.getenv("HOST") or ("0.0.0.0" if os.getenv("SPACE_ID") else "127.0.0.1"),
               server_port=int(os.getenv("PORT", "7860")), auth=auth.check, css=CSS, js=JS, max_file_size="200mb", show_error=True,
-              inbrowser=bool(os.getenv("OPEN_BROWSER")), favicon_path=str(Path(__file__).parent / "assets" / "logo.ico"))
+              favicon_path=str(Path(__file__).parent / "assets" / "logo.ico"))
     try:
         demo.queue(default_concurrency_limit=8).launch(theme=THEME, **kw)
     except TypeError:

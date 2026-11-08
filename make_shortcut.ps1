@@ -8,8 +8,8 @@ $s.TargetPath = Join-Path $root 'start.bat'
 $s.WorkingDirectory = $root
 $s.IconLocation = (Join-Path $root 'assets\logo.ico') + ',0'
 $s.Description = 'مترجم الروايات'
-$s.WindowStyle = 1
+$s.WindowStyle = 7
 $s.Save()
 Write-Host ''
 Write-Host "تم: وضعت اختصار «مترجم الروايات» على سطح المكتب." -ForegroundColor Green
-Write-Host "اضغط عليه مرتين لتشغيل الموقع (يفتح المتصفح لحاله)."
+Write-Host "اضغط عليه مرتين: يشغّل الموقع (إذا مو شغّال) ويفتح نافذته. النافذة السوداء الصغيرة تبقى في شريط المهام، وإذا قفلتها يقف الموقع."
