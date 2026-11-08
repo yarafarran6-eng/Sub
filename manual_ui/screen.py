@@ -13,12 +13,20 @@ def build():
     put("pid", gr.State("")), put("did", gr.State("")), put("cur", gr.State(0)), put("grp", gr.State(0))
     # ---- the bar that never leaves the screen
     put("curbar", gr.HTML("<div class='curbar'>لا يوجد ملف مفتوح. ابدأ من تبويب «الملف».</div>"))
-    with gr.Row():
-        put("last", gr.Markdown("لا توجد تغييرات للتراجع عنها"))
-        put("b_undo", gr.Button("↩ تراجع عن آخر تغيير (أي نوع)", size="sm"))
-        put("b_resetall", gr.Button("⟲ إعادة المسودة كلها للبداية", size="sm"))
-        put("saved", gr.Markdown())
-    danger("resetall")
+    with gr.Group(elem_classes="undobar"):
+        gr.HTML("<div class='ub-t'>هذي الصفحة فقط</div>")
+        with gr.Row():
+            put("b_undo_pg", gr.Button("↩ تراجع عن آخر تغيير في هذه الصفحة", size="sm"))
+            put("b_reset_pg", gr.Button("⟲ أعد هذه الصفحة للأصل", size="sm"))
+        danger("resetpg")
+        gr.HTML("<div class='ub-t'>الملف كله</div>")
+        with gr.Row():
+            put("b_undo", gr.Button("↩ تراجع عن آخر تغيير (أي صفحة)", size="sm"))
+            put("b_resetall", gr.Button("⟲ أعد المسودة كلها للبداية", size="sm"))
+        danger("resetall")
+        with gr.Row():
+            put("last", gr.Markdown("لا توجد تغييرات للتراجع عنها"))
+            put("saved", gr.Markdown())
     with gr.Tabs() as tabs:
         with gr.Tab("١. الملف", id="file"):
             screen_file.build()
@@ -61,6 +69,9 @@ def _wire(tabs):
     ask(C["b_ddel"], "deldraft", h_files.ask_delete_draft, C["pid"])
     yes("deldraft", h_files.delete_draft, [C["pid"], C["did"]])
     C["b_undo"].click(h_files.undo, S, ALL)
+    C["b_undo_pg"].click(h_files.undo_page, S, ALL)
+    ask(C["b_reset_pg"], "resetpg", h_files.ask_reset_page, [C["pid"], C["did"], C["cur"]])
+    yes("resetpg", h_files.reset_page, S)
     ask(C["b_resetall"], "resetall", h_files.ask_reset_all, C["pid"])
     yes("resetall", h_files.reset_all, [C["pid"], C["did"]])
 

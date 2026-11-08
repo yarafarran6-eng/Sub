@@ -139,3 +139,46 @@ def reset_all(pid, did):
         manual.reset_all(d)
         manual.save_draft(pid, d)
     return view(pid, did, 0, 0, "⟲ رجعت المسودة إلى البداية. تقدر تتراجع.")
+
+
+# ---- the same two actions for the OPEN page only
+def _page_of(pid, did, cur):
+    from .data import orig_page
+    d = manual.load_draft(pid, did)
+    p = orig_page(d, cur)
+    if p is None:
+        raise gr.Error("هذي صفحة مضافة (صورة أو فارغة) وما لها نص أصلي. استخدم «تراجع عن آخر تغيير» العام.", title="صفحة مضافة")
+    return p
+
+
+@safe
+def undo_page(pid, did, cur, grp):
+    guard()
+    need(pid)
+    with manual._lock:
+        page = _page_of(pid, did, cur)
+        _, units = manual.load(pid)
+        d = manual.load_draft(pid, did)
+        label = manual.undo_page(d, units, page)
+        manual.save_draft(pid, d)
+    return view(pid, did, cur, grp, f"↩ تراجعت عن «{label}» في هذه الصفحة فقط." if label else "⚠ ما فيه تغيير في هذه الصفحة أتراجع عنه.")
+
+
+@safe
+def ask_reset_page(pid, did, cur):
+    need(pid)
+    page = _page_of(pid, did, cur)
+    return gr.update(visible=True), f"تعيد الصفحة الأصلية رقم {page + 1} فقط للملف الأصلي (بدون ترجمة ولا تنسيق ولا فقرات أضفتها)؟ باقي الصفحات ما تتأثر، وتقدر تتراجع بعدها."
+
+
+@safe
+def reset_page(pid, did, cur, grp):
+    guard()
+    need(pid)
+    with manual._lock:
+        page = _page_of(pid, did, cur)
+        _, units = manual.load(pid)
+        d = manual.load_draft(pid, did)
+        changed = manual.reset_page_to_original(d, units, page)
+        manual.save_draft(pid, d)
+    return view(pid, did, cur, grp, f"⟲ رجعت الصفحة {page + 1} للأصل. تقدر تتراجع." if changed else "هذي الصفحة أصلاً مثل الملف الأصلي، ما فيها تغييرات.")

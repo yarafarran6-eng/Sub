@@ -300,6 +300,57 @@ def undo_option(d, *prefix):
     return None
 
 
+def page_uids(d, units, page):
+    """Ids of every paragraph that belongs to one original page (the original ones and the ones you added)."""
+    return {u["id"] for u in units if u["page"] == page} | {x for x, v in d["extra"].items() if v.get("page") == page}
+
+
+def undo_page(d, units, page):
+    """Undoes the last change that touched THIS page only. Changes to other pages made in the same step stay as they are."""
+    uids = page_uids(d, units, page)
+
+    def mine(it):
+        p = it["p"]
+        if len(p) < 2:
+            return False
+        if p[0] in ("tr", "src", "deleted", "ustyle"):
+            return p[1] in uids
+        if p[0] == "pstyle":
+            return p[1] == str(page)
+        if p[0] == "extra":
+            pg = (d["extra"].get(p[1]) or {}).get("page")
+            if pg is None and isinstance(it["o"], dict):
+                pg = it["o"].get("page")
+            return pg == page
+        return False
+
+    for idx in range(len(d["hist"]) - 1, -1, -1):
+        e = d["hist"][idx]
+        take = [it for it in e["inv"] if mine(it)]
+        if take:
+            for it in take:
+                _put(d, it["p"], it["o"])
+            e["inv"] = [it for it in e["inv"] if it not in take]
+            if not e["inv"]:
+                d["hist"].pop(idx)
+            return e["label"]
+    return None
+
+
+def reset_page_to_original(d, units, page):
+    """This page only: translations, edited source text, deleted flags, every style, the page style and the paragraphs you added,
+    all back to the original file. One step that can be undone."""
+    tx = Tx(d, "إعادة هذي الصفحة للأصل")
+    for uid in sorted(page_uids(d, units, page)):
+        for k in ("tr", "src", "deleted", "ustyle"):
+            tx.set(k, uid, value=MISSING)
+    for xid, x in list(d["extra"].items()):
+        if x.get("page") == page:
+            tx.set("extra", xid, value=MISSING)
+    tx.set("pstyle", str(page), value=MISSING)
+    return tx.commit()
+
+
 def last_label(d):
     return d["hist"][-1]["label"] if d.get("hist") else ""
 
