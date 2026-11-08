@@ -49,11 +49,12 @@ try:
 except Exception as e:
     assert "الصور" in str(e) or "Error" in type(e).__name__, e
 assert len(chats.list_chats()) == 1, "failed message not saved"
-# image first answered by a vision key, then thanks sent to a text-only key
+# image sent to a text-only model falls to a vision key; the follow-up "thanks" goes to the text-only key I picked
 for k in keystore.load_keys(): keystore.delete_key(k["id"])
-keystore.add_key("mock", "mock-vision1"); c, *_ = tab_chat.send(None, {"text": "اقرأ", "files": [img]}, "auto", True)
-for k in keystore.load_keys(): keystore.delete_key(k["id"])
-keystore.add_key("mock", "mock-novision2")
-c2, scr, *_ = tab_chat.send(c, {"text": "شكرا", "files": []}, "auto", True)
-assert "النص فقط" in scr[-1]["content"], scr[-1]
+keystore.add_key("mock", "mock-novision2"); keystore.add_key("mock", "mock-vision1")
+nv = [k["id"] for k in keystore.load_keys() if k["key"] == "mock-novision2"][0]
+c, scr, *_ = tab_chat.send(None, {"text": "اقرأ", "files": [img]}, nv, True)
+assert "رد تجريبي" in scr[-1]["content"]
+c2, scr, *_ = tab_chat.send(c, {"text": "شكرا", "files": []}, nv, False)
+assert "رد تجريبي" in scr[-1]["content"] and "novision" not in scr[-1]["content"].lower()
 print("chat OK")

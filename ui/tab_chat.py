@@ -62,25 +62,23 @@ def send(cid, mm, model, fb):
     if not model or model == priority.AUTO:             # chat may use any key, in the translating priority order
         route = {**route, "order": priority.order_for("translate") or priority.order_for("edit")}
     recent = chat["msgs"][-24:]
-    has_img = any(f["kind"] == "image" for m in recent[-6:] for f in m.get("files", []))
-    meta, avoid, answer, stripped = {}, set(), None, False
+    new_img = any(f["kind"] == "image" for f in kept)   # pictures are sent only with the message that carries them
+    meta, avoid, answer = {}, set(), None
     try:
         with use_route(route):
-            if has_img:                                      # pictures in the recent messages: find an AI that understands them
-                api = chats.to_api(recent, SYSTEM)
+            if new_img:                                     # find an AI that understands pictures
+                api = chats.to_api(recent, SYSTEM, keep_images=1)
                 for _ in range(5):
                     try:
                         answer = call(api, role="any", max_tokens=2048, temperature=0.7, task="chat", avoid=avoid, meta=meta)
                         break
                     except llm.BadRequest as e:
                         avoid.add(getattr(e, "key_id", ""))
-            if answer is None:
-                if has_img and any(f["kind"] == "image" for f in kept):
-                    chat["msgs"].pop()                       # the new message itself has a picture and nobody can read it
-                    raise gr.Error("الذكاء اللي اخترته يقرأ النص فقط ولا يفهم الصور (مثل qwen2.5:7b). اختر ذكاء يدعم الصور مثل Gemini، أو في Ollama نزّل نموذج llava أو qwen2.5vl.",
+                if answer is None:
+                    chat["msgs"].pop()
+                    raise gr.Error("ما لقيت ذكاء يقرأ الصور. النموذج اللي اخترته يقرأ النص فقط (مثل qwen2.5:7b). اختر Gemini أو Groq، أو في Ollama نزّل نموذج llava أو qwen2.5vl.",
                                    title="الصور غير مدعومة")
-                # no picture in the new message: answer from the text only (the earlier answer already describes the picture)
-                stripped = has_img
+            else:                                           # later messages go to the AI you picked as plain text
                 answer = call(chats.to_api(recent, SYSTEM, keep_images=0), role="any", max_tokens=2048, temperature=0.7, task="chat", meta=meta)
     except NoKeys as e:
         chat["msgs"].pop()
@@ -90,8 +88,6 @@ def send(cid, mm, model, fb):
         raise gr.Error(f"الذكاء رفض الطلب: {e}", title="رفض الطلب")
     k = next((x for x in load_keys() if x["id"] == meta.get("key_id")), None)
     note = f"{meta.get('name', '?')} ({meta.get('model') or 'تلقائي'}) · {meta.get('secs', 0):.1f} ثانية" + (f" · {priority.brief_limit(k)}" if k else "")
-    if stripped:
-        note += " · رد من النص فقط (هذا الذكاء ما يشوف الصور)"
     chat["msgs"].append({"role": "assistant", "text": answer, "note": note})
     chats.save(chat)
     if len({c["id"] for c in route["calls"]}) > 1:
