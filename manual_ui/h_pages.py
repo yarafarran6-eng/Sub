@@ -134,5 +134,22 @@ def cur_move(pid, did, cur, to):
     return move(pid, did, int(cur or 0) + 1, to)
 
 
-def cur_replace(pid, did, cur, file, fpage, sure):
+def cur_pick(file):
+    if not file:
+        return None, "لم تختر صورة بعد"
+    import os
+    path = path_of(file)
+    return path, "✅ " + os.path.basename(path)
+
+
+@safe
+def cur_ask_replace(pid, did, cur, file):
+    need(pid)
+    if not file:
+        raise gr.Error("اضغط «اختر صورة» أولاً وحدد الصورة من جهازك", title="ما اخترت صورة")
+    import os
+    return gr.update(visible=True), f"تحذف الصفحة {int(cur or 0) + 1} وتحط مكانها صورتك «{os.path.basename(path_of(file))}»؟ تقدر تتراجع بعدها."
+
+
+def cur_replace(pid, did, cur, file, fpage=1, sure=True):
     return insert(pid, did, "replace", int(cur or 0) + 1, file, fpage, sure, False)

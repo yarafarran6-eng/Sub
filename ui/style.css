@@ -105,3 +105,9 @@ html, body { overflow-x: hidden; }
 .ic-ok { color: #16a34a; } .ic-warn { color: #d97706; } .ic-err { color: #dc2626; }
 .step i .ic, .step i .ic svg { color: #fff; margin: 0; width: 1em; height: 1em; }
 button .ic, .hchip .ic { margin-inline: 0.25em; }
+
+/* page management card: one small card per action */
+.pcard { border: 1px solid rgba(99,102,241,.25); border-radius: 14px; padding: 12px; margin-bottom: 10px; gap: 8px; }
+.pc-t { font-weight: 700; font-size: 15px; }
+.pc-d { font-size: 13px; opacity: .75; margin-bottom: 4px; }
+.pc-name { display: flex; align-items: center; }

@@ -41,9 +41,11 @@ h_files.undo(*S)
 assert manual.effective_plan(manual.load_draft(pid, did))[1]["k"] == "o"
 # the same operations from the translation tab, on the OPEN page (cur is 0-based) - preview below the paragraphs must follow
 n0 = len(manual.effective_plan(manual.load_draft(pid, did)))
-try: h_pages.cur_replace(pid, did, 1, "/tmp/mine.jpg", 1, False); raise SystemExit("replace from the tab without confirmation must fail")
+try: h_pages.cur_ask_replace(pid, did, 1, None); raise SystemExit("asking to replace without a picture must fail")
 except gr.Error: pass
-o = h_pages.cur_replace(pid, did, 1, "/tmp/mine.jpg", 1, True)
+pth, nm = h_pages.cur_pick("/tmp/mine.jpg"); assert nm.endswith("mine.jpg")
+q = h_pages.cur_ask_replace(pid, did, 1, pth); assert "الصفحة 2" in q[1] and "mine.jpg" in q[1]
+o = h_pages.cur_replace(pid, did, 1, pth)
 assert manual.effective_plan(manual.load_draft(pid, did))[1]["k"] == "e" and v(o, "pv_img") and os.path.exists(v(o, "pv_img"))
 o = h_pages.cur_move(pid, did, 1, 3)
 assert manual.effective_plan(manual.load_draft(pid, did))[2]["k"] == "e" and v(o, "pv_img")

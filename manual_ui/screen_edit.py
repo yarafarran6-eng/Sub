@@ -87,19 +87,24 @@ def build():
     with gr.Accordion("🎨 تنسيق الصفحة كلها: خط، حجم، لون، تحديد، مكان، خلفية (اضغط السهم)", open=False):
         gr.HTML("<div class='mini'>يطبَّق على كل فقرات الصفحة. وتنسيق فقرة بعينها (تحت الفقرة) يغلب تنسيق الصفحة.</div>")
         style_block("p_", True)
-    with gr.Accordion("🗂 إدارة هذي الصفحة: انقلها أو احذفها أو استبدلها بصورة من جهازك (اضغط السهم)", open=False):
-        gr.HTML("<p class='hint'>كل شي هنا على الصفحة المفتوحة الحين، وتقدر تتراجع بعده من زر «تراجع عن آخر تغيير» فوق.</p>")
-        with gr.Row():
-            put("cp_to", gr.Number(1, label="انقل هذي الصفحة إلى الموضع رقم", precision=0, minimum=1, scale=3))
-            put("b_cp_move", gr.Button("↕ انقل الصفحة", scale=2))
-        with gr.Group():
-            put("b_cp_del", gr.Button("🗑 احذف هذي الصفحة من الملف النهائي"))
+    with gr.Accordion("🗂 إدارة هذي الصفحة: نقل · حذف · استبدال بصورة", open=False):
+        with gr.Group(elem_classes="pcard"):
+            gr.HTML("<div class='pc-t'>↕ نقل الصفحة</div><div class='pc-d'>اكتب رقم المكان الجديد للصفحة، ثم اضغط «انقل».</div>")
+            with gr.Row(equal_height=True):
+                put("cp_to", gr.Number(1, show_label=False, container=False, precision=0, minimum=1, scale=1, min_width=120))
+                put("b_cp_move", gr.Button("انقل", scale=2))
+        with gr.Group(elem_classes="pcard"):
+            gr.HTML("<div class='pc-t'>🗑 حذف الصفحة</div><div class='pc-d'>تنحذف من الملف النهائي، وتقدر ترجعها بزر «تراجع» فوق.</div>")
+            put("b_cp_del", gr.Button("احذف هذي الصفحة", variant="stop"))
             danger("cpdel")
-        put("cp_file", gr.File(label="استبدلها بصورة من جهازك (png, jpg, webp) أو صفحة من ملف PDF", file_types=[".pdf", ".png", ".jpg", ".jpeg", ".webp"]))
-        with gr.Row():
-            put("cp_page", gr.Number(1, label="لو رفعت PDF: أي صفحة منه؟", precision=0, minimum=1, scale=2))
-            put("cp_sure", gr.Checkbox(False, label="أؤكد حذف الصفحة القديمة", scale=3))
-        put("b_cp_rep", gr.Button("✅ استبدل هذي الصفحة بالصورة", variant="primary"))
+        with gr.Group(elem_classes="pcard"):
+            gr.HTML("<div class='pc-t'>🖼 استبدالها بصورة من جهازك</div><div class='pc-d'>اختر الصورة، ثم اضغط «استبدل». الصورة تتغير بحجم صفحات الكتاب.</div>")
+            put("cp_file", gr.State(None))
+            with gr.Row(equal_height=True):
+                put("cp_up", gr.UploadButton("📂 اختر صورة", file_types=[".png", ".jpg", ".jpeg", ".webp"], scale=1))
+                put("cp_name", gr.Markdown("لم تختر صورة بعد", elem_classes="pc-name"))
+            put("b_cp_rep", gr.Button("استبدل هذي الصفحة بالصورة", variant="primary"))
+            danger("cprep")
     with gr.Accordion("🤖 الذكاء الاصطناعي: من يترجم ومن يدقق (ينطبق على أزرار الترجمة والتدقيق تحت)", open=False):
         gr.HTML("<div class='mini'>إذا تركتهم على «حسب ترتيب الأولوية» يمشي على الترتيب اللي ضبطته في الإعدادات. تقدر تختار ذكاءً بعينه، وإذا انتهى حده يكمل على الترتيب (لو علّمت الخانة). التنبيه الجانبي يعرض اسم الذكاء والمدة التقريبية والمتبقي من حده.</div>")
         with gr.Row():
