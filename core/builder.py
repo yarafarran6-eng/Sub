@@ -18,7 +18,21 @@ def _hex_rgb(h):
 
 
 def _bg(page, rect):
+    """The colour behind the text: the commonest colour inside its box (text is the minority), so a coloured
+    label box stays coloured when the text is erased. Falls back to a pixel just outside the corner."""
     import fitz
+    from collections import Counter
+    try:
+        r = fitz.Rect(rect) & page.rect
+        if not r.is_empty:
+            px = page.get_pixmap(clip=r, dpi=40)
+            n, data = px.n, px.samples
+            if px.width * px.height >= 4 and n >= 3:
+                cnt = Counter(data[i:i + 3] for i in range(0, len(data) - n + 1, n))
+                c = cnt.most_common(1)[0][0]
+                return tuple(v / 255 for v in c)
+    except Exception:
+        pass
     try:
         r = fitz.Rect(rect.x0 - 3, rect.y0 - 3, rect.x0 - 1, rect.y0 - 1) & page.rect
         if r.is_empty:
@@ -183,6 +197,7 @@ def _apply_page(doc, pno, us, obstacles, tgt, default_family=None, bg=None):
     has_bg = _draw_background(page, bg)
     fams = font_families() if tgt == "ar" else {}
     dflt = fams.get(default_family or DEFAULT_FAMILY) or fams.get(DEFAULT_FAMILY) or ("NotoNaskhArabic-Regular.ttf", "NotoNaskhArabic-Bold.ttf")
+    boxes = _boxes_around(page)               # label boxes of the ORIGINAL page (before anything is erased)
     for u in us:
         if u.get("custom"):                   # an added paragraph has no original text to erase
             continue
@@ -238,13 +253,33 @@ def _apply_page(doc, pno, us, obstacles, tgt, default_family=None, bg=None):
             body = "<p style='margin:0'>" + html.escape(u["tr"]).replace("\n", "<br>") + "</p>"
         css = (faces + f"body{{font-family:{family};font-size:{size}pt;color:{color};text-align:{align};"
                f"direction:{'rtl' if rtl else 'ltr'};margin:0;font-weight:{weight};line-height:1.3;}}")
+        if scratch is None:
+            scratch = fitz.open()
+            scratch.new_page(width=page.rect.width, height=page.rect.height)
+        if h0 < size0 * 1.9 and "\n" not in u["tr"]:        # it was one line: keep it one line, widen the box if needed
+            lo, hi = 8.0, W - 8.0
+            ob = fitz.Rect(x0, y0, x1, y1)
+            cen = fitz.Point((ob.x0 + ob.x1) / 2, (ob.y0 + ob.y1) / 2)
+            inside = [b for b in boxes if b.contains(cen)]
+            if inside:                                     # sitting in a label box: stay inside it
+                b = min(inside, key=lambda q: q.width * q.height)
+                bx0, bx1 = (W - b.x1, W - b.x0) if rtl and u.get("align") != "center" else (b.x0, b.x1)
+                lo, hi = max(lo, bx0 + 2), min(hi, bx1 - 2)
+            for v in obstacles:
+                if v is u or not v.get("bbox") or v["bbox"][3] < y0 + 1 or v["bbox"][1] > y1 - 1:
+                    continue
+                vx0, vx1 = v["bbox"][0], v["bbox"][2]
+                if rtl and u.get("align") != "center":
+                    vx0, vx1 = W - vx1, W - vx0
+                if vx1 <= rect.x0 + 1:
+                    lo = max(lo, vx1 + 2)
+                elif vx0 >= rect.x1 - 1:
+                    hi = min(hi, vx0 - 2)
+            if hi - lo > rect.width:
+                rect = _widen_one_line(scratch, page, rect, body, css, arch, size, align, lo, hi, h0)
         if u.get("hl"):                       # a coloured box around the text: measure the real text height first
-            if scratch is None:
-                scratch = fitz.open()
-                scratch.new_page(width=page.rect.width, height=page.rect.height)
-            sp, _ = _fit(scratch[0], rect, body, css, arch, ymax)[1:]
+            sp, _ = _fit(_fresh(scratch, page), rect, body, css, arch, ymax)[1:]
             used = fitz.Rect(rect.x0, rect.y0, rect.x1, rect.y0 + max(size * 1.3, _fit_height(rect, sp)))
-            scratch[0].clean_contents()
             pad = 2.5
             page.draw_rect(fitz.Rect(used.x0 - pad, used.y0 - pad, used.x1 + pad, used.y1 + pad), color=None,
                            fill=_hex_rgb(u["hl"]), overlay=True)
@@ -254,6 +289,50 @@ def _apply_page(doc, pno, us, obstacles, tgt, default_family=None, bg=None):
     if scratch is not None:
         scratch.close()
     return shrunk
+
+
+def _fresh(scratch, page):
+    """An empty scratch page of the same size (for measuring text without touching the real page)."""
+    import fitz
+    while len(scratch):
+        scratch.delete_page(0)
+    return scratch.new_page(width=page.rect.width, height=page.rect.height)
+
+
+def _boxes_around(page):
+    """Filled rectangles drawn on the page (label boxes, highlights): a short line sitting in one stays inside it."""
+    out = []
+    try:
+        for d in page.get_drawings():
+            if d.get("fill") is not None and d.get("rect") is not None:
+                r = d["rect"]
+                if r.width > 6 and r.height > 4 and r.width < page.rect.width * 0.9:
+                    out.append(r)
+    except Exception:
+        pass
+    return out
+
+
+def _widen_one_line(scratch, page, rect, body, css, arch, size, align, lo, hi, line_h):
+    """A line that was ONE line in the original must stay one line: widen the box (inside lo..hi) until it fits."""
+    test_h = max(line_h, size * 1.45)             # room for exactly one line
+    for f in (1.0, 1.15, 1.3, 1.5, 1.8, 2.2, 3.0):
+        w = min(rect.width * f, hi - lo)
+        if align == "left":
+            x0 = rect.x0
+        elif align == "right":
+            x0 = rect.x1 - w
+        else:
+            x0 = (rect.x0 + rect.x1) / 2 - w / 2
+        x0 = max(lo, min(x0, hi - w))
+        r = fitz_rect(x0, rect.y0, x0 + w, rect.y0 + test_h)
+        sp = _fresh(scratch, page)
+        spare, _ = sp.insert_htmlbox(r, body, css=css, archive=arch, scale_low=1)
+        if spare >= 0:
+            return fitz_rect(x0, rect.y0, x0 + w, rect.y1)
+        if w >= hi - lo - 0.1:
+            break
+    return rect
 
 
 def _fit_height(rect, spare):
