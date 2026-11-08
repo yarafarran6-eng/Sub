@@ -23,12 +23,13 @@ remote["ui/brand_new.py"] = b"# new file\n"
 (site / "extra_local.txt").write_text("mine")                                 # only local: must survive
 
 def sha(b): return hashlib.sha1(b"blob %d\0" % len(b) + b).hexdigest()
-updater._api_tree = lambda: {"tree": [{"type": "blob", "path": k, "sha": sha(v)} for k, v in remote.items()] + [{"type": "blob", "path": "data/x.json", "sha": "0"}]}
-updater._api_commit = lambda: {"commit": {"message": "test commit\nbody", "committer": {"date": "2026-11-08T10:00:00Z"}}}
+updater._api_tree = lambda *a: {"tree": [{"type": "blob", "path": k, "sha": sha(v)} for k, v in remote.items()] + [{"type": "blob", "path": "data/x.json", "sha": "0"}]}
+updater._api_commit = lambda: {"sha": "abc123", "commit": {"message": "test commit\nbody", "committer": {"date": "2026-11-08T10:00:00Z"}, "tree": {"sha": "t1"}}}
+updater._raw = lambda ref, path: remote[path]
 buf = io.BytesIO()
 with zipfile.ZipFile(buf, "w") as z:
     for k, v in remote.items(): z.writestr("Sub-main/" + k, v)
-updater._download_zip = lambda: buf.getvalue()
+updater._download_zip = lambda ref=None: buf.getvalue()
 
 r = updater.check()
 assert r["changed"] == ["core/chats.py"] and r["new"] == ["ui/brand_new.py"], r
@@ -43,15 +44,30 @@ assert updater.apply()["written"] == []
 
 # GitHub API blocked / rate limited -> the check still works by comparing with the downloaded zip
 (site / "ui" / "brand_new.py").unlink(); (site / "core" / "chats.py").write_text("# old again\n")
-def api_down(): raise updater.UpdateError("GitHub حدّ عدد الطلبات من شبكتك.")
+def api_down(*a): raise updater.UpdateError("GitHub حدّ عدد الطلبات من شبكتك.")
 real_tree = updater._api_tree; updater._api_tree = api_down; updater._zip_cache.clear()
 r2 = updater.check()
 assert r2["changed"] == ["core/chats.py"] and r2["new"] == ["ui/brand_new.py"], r2
 assert len(updater.apply(r2)["written"]) == 2 and updater.check()["up_to_date"]
 updater._api_tree = real_tree
 
+# STALE download (what GitHub's cached zip can give): the content does not match the fingerprint -> must NOT be written or called done
+(site / "core" / "chats.py").write_text("# old again\n")
+stale = dict(remote); stale["core/chats.py"] = b"# an older version of the file\n"
+updater._raw = lambda ref, path: stale[path]
+buf2 = io.BytesIO()
+with zipfile.ZipFile(buf2, "w") as z:
+    for k, v in stale.items(): z.writestr("Sub-main/" + k, v)
+updater._zip_cache.clear(); updater._download_zip = lambda ref=None: buf2.getvalue()
+r3 = updater.check(); out3 = updater.apply(r3)
+assert out3["failed"] == ["core/chats.py"] and "core/chats.py" not in out3["written"], out3
+assert (site / "core" / "chats.py").read_text() == "# old again\n", "a file that does not match must stay untouched"
+# a retry with the right content (fresh copy) succeeds and every written file matches its fingerprint
+updater._raw = lambda ref, path: remote[path]
+out4 = updater.apply(updater.check()); assert out4["failed"] == [] and updater.check()["up_to_date"], out4
+
 # a bad path inside the answer must never write outside the folder
-updater._api_tree = lambda: {"tree": [{"type": "blob", "path": "../evil.py", "sha": "1"}]}
+updater._api_tree = lambda *a: {"tree": [{"type": "blob", "path": "../evil.py", "sha": "1"}]}
 assert updater.apply(updater.check())["written"] == []
 assert not (tmp / "evil.py").exists()
 

@@ -80,15 +80,21 @@ def do_update():
     guard()
     try:
         res = updater.apply()
+        after = updater.check() if res["written"] or res["failed"] else None
     except updater.UpdateError as e:
         gr.Warning(str(e), title="فشل التحديث")
         return f"<div class='bad'>⚠ فشل التحديث: {e}. ما انكتب شي ناقص، تقدر تجرب مرة ثانية.</div>", gr.update(visible=False)
-    if not res["written"]:
+    if not res["written"] and not res["failed"]:
         return "<div class='ok'>✅ نسختك هي الأحدث، ما فيه شي يتحدّث.</div>", gr.update(visible=False)
+    if res["failed"] or (after and not after["up_to_date"]):
+        left = res["failed"] or after["changed"] + after["new"]
+        gr.Warning("بعض الملفات ما تحدّثت. جرّب بعد دقيقتين، أو استخدم update.bat.", title="تحديث ناقص")
+        return (f"<div class='warn'>⚠ تحدّث {len(res['written'])} ملف، وبقي {len(left)} ما تحدّث (GitHub لسه ما جهّز النسخة الجديدة أو الاتصال انقطع):"
+                f"<ul>{_list(left)}</ul><p>اضغط «حدّث الآن» مرة ثانية بعد دقيقتين. أو استخدم update.bat.</p></div>"), gr.update(visible=bool(res["written"]) and res["needs_restart"])
     gr.Info(f"تحدّث {len(res['written'])} ملف", title="✅ تم التحديث")
     extra = f"<p>{res['pip']}</p>" if res["pip"] else ""
-    return (f"<div class='ok'>✅ تحدّث {len(res['written'])} ملف. التغييرات تظهر بعد إعادة التشغيل.{extra}</div>",
-            gr.update(visible=res["needs_restart"]))
+    return (f"<div class='ok'>✅ تحدّث {len(res['written'])} ملف وتأكدت إن كل ملف مطابق لنسخة GitHub. "
+            f"{'التغييرات تظهر بعد «إعادة التشغيل» تحت.' if res['needs_restart'] else ''}{extra}</div>"), gr.update(visible=res["needs_restart"])
 
 
 def do_restart():

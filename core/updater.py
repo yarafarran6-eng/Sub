@@ -1,6 +1,7 @@
 """Update from inside the site: compares your files with the latest version on GitHub, downloads only what changed,
 never touches the data folder, installs new libraries, and can restart the site."""
-import hashlib, io, json, os, shutil, subprocess, sys, threading, time, zipfile
+import hashlib, io, json, os, shutil, subprocess, sys, threading, time, urllib.parse, zipfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import httpx
 from .config import ROOT
@@ -53,20 +54,31 @@ def _get(url, as_json=True, timeout=60):
     return body
 
 
-def _api_tree():
-    return _get(f"https://api.github.com/repos/{REPO}/git/trees/{BRANCH}?recursive=1")
-
-
 def _api_commit():
     return _get(f"https://api.github.com/repos/{REPO}/commits/{BRANCH}")
 
 
-def _download_zip():
-    if _zip_cache.get("t", 0) > time.time() - 600:          # just downloaded for the check: do not download twice
-        return _zip_cache["data"]
-    data = _get(f"https://github.com/{REPO}/archive/refs/heads/{BRANCH}.zip", as_json=False, timeout=180)
-    _zip_cache.update(t=time.time(), data=data)
+def _api_tree(tree_sha=None):
+    return _get(f"https://api.github.com/repos/{REPO}/git/trees/{tree_sha or BRANCH}?recursive=1")
+
+
+def _raw(ref, path):
+    """One file exactly as it was at that commit (the commit id never changes, so it can never be an old cached copy)."""
+    return _get(f"https://raw.githubusercontent.com/{REPO}/{ref}/{urllib.parse.quote(path)}", as_json=False)
+
+
+def _download_zip(ref=None):
+    ref = ref or f"refs/heads/{BRANCH}"
+    c = _zip_cache.get(ref)
+    if c and c[0] > time.time() - 600:                      # just downloaded for the check: do not download twice
+        return c[1]
+    data = _get(f"https://github.com/{REPO}/archive/{ref}.zip", as_json=False, timeout=180)
+    _zip_cache[ref] = (time.time(), data)
     return data
+
+
+def _blob(b):
+    return hashlib.sha1(b"blob %d\0" % len(b) + b).hexdigest()
 
 
 def _skip(rel):
@@ -104,57 +116,78 @@ def _check_zip():
 
 
 def check():
-    """-> {"changed": [...], "new": [...], "latest": {"message","date"}, "up_to_date": bool}"""
+    """-> {"changed": [...], "new": [...], "latest": {"message","date"}, "up_to_date": bool, "commit": id, "expect": {path: blob id}}"""
     try:
-        tree = _api_tree()
+        c = _api_commit()
+        commit = c.get("sha") or ""
+        info = {"message": (c.get("commit", {}).get("message") or "").split("\n")[0], "date": c.get("commit", {}).get("committer", {}).get("date", "")[:10]}
+        tree = _api_tree((c.get("commit", {}).get("tree") or {}).get("sha"))
         if tree.get("truncated"):
             raise UpdateError("truncated")
-        changed, new = [], []
+        changed, new, expect = [], [], {}
         for it in tree.get("tree", []):
             if it.get("type") != "blob" or _skip(it["path"]):
                 continue
             local = ROOT / it["path"]
+            expect[it["path"]] = it["sha"]
             if not local.exists():
                 new.append(it["path"])
             elif blob_sha(local) != it["sha"]:
                 changed.append(it["path"])
+        return {"changed": sorted(changed), "new": sorted(new), "latest": info, "up_to_date": not changed and not new, "commit": commit, "expect": expect}
+    except UpdateError:
+        return _check_zip()                           # the API refused: compare with the downloaded zip instead
+
+
+def _fetch_files(todo, res):
+    """-> ({path: bytes}, [paths that could not be fetched or did not match the expected content])."""
+    expect, commit = res.get("expect") or {}, res.get("commit") or ""
+    got = {}
+
+    def ok(path, data):
+        return path not in expect or _blob(data) == expect[path]
+
+    if commit and expect:                                          # best way: each file by commit id, checked against its fingerprint
+        def one(path):
+            try:
+                return path, _raw(commit, path)
+            except UpdateError:
+                return path, None
+        with ThreadPoolExecutor(max_workers=6) as ex:
+            for path, data in ex.map(one, todo):
+                if data is not None and ok(path, data):
+                    got[path] = data
+    missing = [p for p in todo if p not in got]
+    if missing:                                                    # second way: the zip of that commit (or of the branch if unknown)
         try:
-            c = _api_commit()
-            info = {"message": (c.get("commit", {}).get("message") or "").split("\n")[0], "date": c.get("commit", {}).get("committer", {}).get("date", "")[:10]}
-        except UpdateError:
-            info = {"message": "", "date": ""}
-        return {"changed": sorted(changed), "new": sorted(new), "latest": info, "up_to_date": not changed and not new}
-    except UpdateError as api_error:
-        try:
-            return _check_zip()                       # same answer without the API
-        except UpdateError as zip_error:
-            raise UpdateError(f"{zip_error}")
+            z = zipfile.ZipFile(io.BytesIO(_download_zip(commit or None)))
+            names = z.namelist()
+            top = names[0].split("/")[0] + "/" if names else ""
+            for path in missing:
+                if top + path in names:
+                    data = z.read(top + path)
+                    if ok(path, data):
+                        got[path] = data
+        except zipfile.BadZipFile:
+            raise UpdateError("الملف اللي نزل من GitHub تالف. جرّب مرة ثانية.")
+    return got, [p for p in todo if p not in got]
 
 
 def apply(res=None):
-    """Downloads the latest version and writes only the files that differ. Returns a report dict."""
+    """Downloads the changed files, CHECKS each one against GitHub's fingerprint, writes only the ones that match."""
     res = res or check()
-    todo = set(res["changed"]) | set(res["new"])
+    todo = [p for p in sorted(set(res["changed"]) | set(res["new"])) if ".." not in p.split("/") and not p.startswith("/")]
     if not todo:
-        return {"written": [], "pip": "", "needs_restart": False}
-    data = _download_zip()
-    try:
-        z = zipfile.ZipFile(io.BytesIO(data))
-    except zipfile.BadZipFile:
-        raise UpdateError("الملف اللي نزل من GitHub تالف. جرّب مرة ثانية.")
+        return {"written": [], "failed": [], "pip": "", "needs_restart": False}
+    got, failed = _fetch_files(todo, res)
     written = []
-    names = z.namelist()
-    top = names[0].split("/")[0] + "/" if names else ""
-    for rel in sorted(todo):
-        member = top + rel
-        if member not in names or ".." in rel.split("/") or rel.startswith("/"):
-            continue
+    for rel, data in got.items():
         dst = (ROOT / rel).resolve()
         if ROOT.resolve() not in dst.parents:
             continue
         dst.parent.mkdir(parents=True, exist_ok=True)
         tmp = dst.with_name(dst.name + ".new")
-        tmp.write_bytes(z.read(member))
+        tmp.write_bytes(data)
         os.replace(tmp, dst)
         written.append(rel)
     pip = ""
@@ -164,7 +197,8 @@ def apply(res=None):
             pip = "ثُبّتت المكتبات الجديدة" if r.returncode == 0 else "تعذّر تثبيت مكتبات جديدة: " + (r.stderr or r.stdout)[-200:]
         except Exception as e:
             pip = f"تعذّر تثبيت مكتبات جديدة: {e}"
-    return {"written": written, "pip": pip, "needs_restart": any(w.endswith(".py") or w.endswith(".css") or w.endswith(".js") for w in written)}
+    return {"written": sorted(written), "failed": failed, "pip": pip,
+            "needs_restart": any(w.endswith((".py", ".css", ".js")) for w in written)}
 
 
 def restart(delay=1.5):
