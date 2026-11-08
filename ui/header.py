@@ -3,13 +3,26 @@ from core import auth, jobs
 from core.config import get_settings
 from core.keystore import load_keys
 
+from pathlib import Path
+
+_LOGO = Path(__file__).resolve().parent.parent / "assets" / "logo.svg"
+
+
+def logo_svg():
+    try:
+        return _LOGO.read_text(encoding="utf-8").split("?>")[-1].strip()
+    except OSError:
+        return ""
+
+
 def hero_html():
     ks = [k for k in load_keys() if k.get("enabled")]
     s = get_settings()
     js = jobs.list_jobs()
     run = sum(1 for m in js if m.get("status") == "running")
-    return ("<div class='hero'><div><h1>مترجم الروايات</h1>"
-            "<p>ارفع الملف، وخلّ المفاتيح تترجم بالتوازي، وراجع الناتج قبل التصدير.</p></div>"
+    return ("<div class='hero'><div class='brand'><span class='logo'>" + logo_svg() + "</span>"
+            "<div><h1>مترجم الروايات</h1>"
+            "<p>ارفع الملف، وخلّ المفاتيح تترجم بالتوازي، وراجع الناتج قبل التصدير.</p></div></div>"
             f"<div class='chips'><span class='hchip'>🔑 مفاتيح مفعّلة: {len(ks)}</span>"
             f"<span class='hchip'>📚 ملفات: {len(js)}{f' (يعمل {run})' if run else ''}</span>"
             f"<span class='hchip'>💰 المصروف: {s['spent_usd']:.3f}$ من {s['budget_usd']}$</span></div></div>")

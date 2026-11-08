@@ -204,7 +204,7 @@ def apply(res=None):
 def restart(delay=1.5):
     """Starts a new copy of the site after this one exits, then exits. The browser page reloads itself (see settings tab)."""
     args = [sys.executable] + sys.argv
-    code = ("import subprocess,sys,time,os; time.sleep(3); "
+    code = ("import subprocess,sys,time,os; time.sleep(3); os.environ.pop('OPEN_BROWSER', None); "
             f"kw = dict(cwd={str(ROOT)!r}); "
             "kw['creationflags'] = 0x10 if os.name == 'nt' else 0; "
             f"subprocess.Popen({args!r}, **kw)")

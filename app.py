@@ -43,7 +43,8 @@ with gr.Blocks(title="مترجم الروايات") as demo:
 if __name__ == "__main__":
     jobs.recover()
     kw = dict(server_name=os.getenv("HOST") or ("0.0.0.0" if os.getenv("SPACE_ID") else "127.0.0.1"),
-              server_port=int(os.getenv("PORT", "7860")), auth=auth.check, css=CSS, js=JS, max_file_size="200mb", show_error=True)
+              server_port=int(os.getenv("PORT", "7860")), auth=auth.check, css=CSS, js=JS, max_file_size="200mb", show_error=True,
+              inbrowser=bool(os.getenv("OPEN_BROWSER")), favicon_path=str(Path(__file__).parent / "assets" / "logo.ico"))
     try:
         demo.queue(default_concurrency_limit=8).launch(theme=THEME, **kw)
     except TypeError:

@@ -111,3 +111,9 @@ button .ic, .hchip .ic { margin-inline: 0.25em; }
 .pc-t { font-weight: 700; font-size: 15px; }
 .pc-d { font-size: 13px; opacity: .75; margin-bottom: 4px; }
 .pc-name { display: flex; align-items: center; }
+
+/* logo beside the site name */
+.brand { display: flex; align-items: center; gap: 14px; }
+.logo { display: inline-flex; flex: none; width: 56px; height: 56px; padding: 7px; border-radius: 16px; background: rgba(255,255,255,.96); box-shadow: 0 4px 14px rgba(0,0,0,.18); }
+.logo svg { width: 100%; height: 100%; }
+@media (max-width: 760px) { .logo { width: 44px; height: 44px; padding: 5px; border-radius: 12px; } }
