@@ -126,6 +126,13 @@ def _wire(tabs):
     C["b_blank"].click(lambda pid, did, op, tg, f, p, s: h_pages.insert(pid, did, op, tg, None, 1, s, True), INS, ALL)
     C["b_peek"].click(h_pages.peek, [C["pid"], C["did"], C["pg_target"]], ALL)
 
+    # ---- manage the page that is open in the translation tab
+    C["b_cp_move"].click(h_pages.cur_move, [C["pid"], C["did"], C["cur"], C["cp_to"]], ALL)
+    ask(C["b_cp_del"], "cpdel", h_pages.cur_ask_delete, [C["pid"], C["did"], C["cur"]])
+    yes("cpdel", h_pages.cur_delete, [C["pid"], C["did"], C["cur"]])
+    C["b_cp_rep"].click(h_pages.cur_replace, [C["pid"], C["did"], C["cur"], C["cp_file"], C["cp_page"], C["cp_sure"]], ALL) \
+        .then(lambda: (None, False), None, [C["cp_file"], C["cp_sure"]])
+
     # ---- preview (under the paragraphs) + final file
     C["b_pv_cur"].click(h_output.preview, S + ARS, [C["pv_img"], C["pv_info"]])
     C["b_pv_prev"].click(lambda *a: h_text.nav(*a[:5], "prev", *a[5:]), NAV + ARS, ALL)

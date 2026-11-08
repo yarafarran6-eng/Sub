@@ -87,6 +87,19 @@ def build():
     with gr.Accordion("🎨 تنسيق الصفحة كلها: خط، حجم، لون، تحديد، مكان، خلفية (اضغط السهم)", open=False):
         gr.HTML("<div class='mini'>يطبَّق على كل فقرات الصفحة. وتنسيق فقرة بعينها (تحت الفقرة) يغلب تنسيق الصفحة.</div>")
         style_block("p_", True)
+    with gr.Accordion("🗂 إدارة هذي الصفحة: انقلها أو احذفها أو استبدلها بصورة من جهازك (اضغط السهم)", open=False):
+        gr.HTML("<p class='hint'>كل شي هنا على الصفحة المفتوحة الحين، وتقدر تتراجع بعده من زر «تراجع عن آخر تغيير» فوق.</p>")
+        with gr.Row():
+            put("cp_to", gr.Number(1, label="انقل هذي الصفحة إلى الموضع رقم", precision=0, minimum=1, scale=3))
+            put("b_cp_move", gr.Button("↕ انقل الصفحة", scale=2))
+        with gr.Group():
+            put("b_cp_del", gr.Button("🗑 احذف هذي الصفحة من الملف النهائي"))
+            danger("cpdel")
+        put("cp_file", gr.File(label="استبدلها بصورة من جهازك (png, jpg, webp) أو صفحة من ملف PDF", file_types=[".pdf", ".png", ".jpg", ".jpeg", ".webp"]))
+        with gr.Row():
+            put("cp_page", gr.Number(1, label="لو رفعت PDF: أي صفحة منه؟", precision=0, minimum=1, scale=2))
+            put("cp_sure", gr.Checkbox(False, label="أؤكد حذف الصفحة القديمة", scale=3))
+        put("b_cp_rep", gr.Button("✅ استبدل هذي الصفحة بالصورة", variant="primary"))
     with gr.Accordion("🤖 الذكاء الاصطناعي: من يترجم ومن يدقق (ينطبق على أزرار الترجمة والتدقيق تحت)", open=False):
         gr.HTML("<div class='mini'>إذا تركتهم على «حسب ترتيب الأولوية» يمشي على الترتيب اللي ضبطته في الإعدادات. تقدر تختار ذكاءً بعينه، وإذا انتهى حده يكمل على الترتيب (لو علّمت الخانة). التنبيه الجانبي يعرض اسم الذكاء والمدة التقريبية والمتبقي من حده.</div>")
         with gr.Row():

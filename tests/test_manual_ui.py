@@ -39,6 +39,19 @@ print("final page sizes:", [(round(p.rect.width), round(p.rect.height), len(p.ge
 assert all(round(p.rect.width) == round(pdf[0].rect.width) for p in pdf) and len(pdf[1].get_images()) == 1
 h_files.undo(*S)
 assert manual.effective_plan(manual.load_draft(pid, did))[1]["k"] == "o"
+# the same operations from the translation tab, on the OPEN page (cur is 0-based) - preview below the paragraphs must follow
+n0 = len(manual.effective_plan(manual.load_draft(pid, did)))
+try: h_pages.cur_replace(pid, did, 1, "/tmp/mine.jpg", 1, False); raise SystemExit("replace from the tab without confirmation must fail")
+except gr.Error: pass
+o = h_pages.cur_replace(pid, did, 1, "/tmp/mine.jpg", 1, True)
+assert manual.effective_plan(manual.load_draft(pid, did))[1]["k"] == "e" and v(o, "pv_img") and os.path.exists(v(o, "pv_img"))
+o = h_pages.cur_move(pid, did, 1, 3)
+assert manual.effective_plan(manual.load_draft(pid, did))[2]["k"] == "e" and v(o, "pv_img")
+q = h_pages.cur_ask_delete(pid, did, 2); assert "الصفحة 3" in q[1]
+o = h_pages.cur_delete(pid, did, 2)
+assert len(manual.effective_plan(manual.load_draft(pid, did))) == n0 - 1 and v(o, "pv_img")
+h_files.undo(*S); h_files.undo(*S); h_files.undo(*S)
+assert len(manual.effective_plan(manual.load_draft(pid, did))) == n0
 # add before / blank / delete / move / swap / range
 o = h_pages.insert(pid, did, "before", 1, None, 1, False, True); assert len(v(o, "plan")) == 4
 h_pages.delete(pid, did, 1); h_pages.move(pid, did, 1, 3); h_pages.swap(pid, did, 1, 2)

@@ -59,7 +59,7 @@
   const M = {
     '✅': ['ok', 'ok'], '✓': ['check'], '✔': ['check'], '⚠': ['warn', 'warn'], '❌': ['xcircle', 'err'], '🚫': ['ban', 'err'],
     '🗑': ['trash'], '👁': ['eye'], '↩': ['undo'], '↺': ['reset'], '🔍': ['search'], '💾': ['save'], '🤖': ['bot'], '✏': ['pencil'],
-    '▶': ['play'], '◀': ['playl'], '➕': ['plus'], '🔄': ['refresh'], '📌': ['pin'], '🎨': ['palette'], '📂': ['folder'],
+    '▶': ['play'], '◀': ['playl'], '➕': ['plus'], '🔄': ['refresh'], '📌': ['pin'], '🎨': ['palette'], '📂': ['folder'], '🗂': ['folder'],
     '⏳': ['hourglass'], '⏹': ['stop'], '☰': ['menu'], '🔒': ['lock'], '✍': ['penline'], '↕': ['vert'], '⬌': ['horiz'], '⇄': ['swap'],
     '🔢': ['hash'], '🔑': ['key'], '🔁': ['repeat'], '⬇': ['download'], '📤': ['upload'], '📚': ['library'], '🌐': ['globe'],
     '💬': ['chat'], '📎': ['clip'], '📄': ['file'], '📝': ['filetext'], '▲': ['up'], '▼': ['down'], '🖼': ['image'], '⏱': ['timer'],

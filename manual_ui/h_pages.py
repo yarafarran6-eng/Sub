@@ -23,7 +23,7 @@ def _show(pid, did, pos, msg):
     out = view(pid, did, pos, 0, msg)
     try:
         png, _, text = preview_png(pid, did, pos)
-        out.update(R(pg_prev=png, pg_prev_info=text))
+        out.update(R(pg_prev=png, pg_prev_info=text, pv_img=png, pv_info=text))
     except Exception:
         pass
     return out
@@ -60,7 +60,7 @@ def delete(pid, did, target):
         i, eff = _n(d, target)
         manual.plan_delete(d, i)
         manual.save_draft(pid, d)
-    return view(pid, did, min(i, max(len(manual.effective_plan(d)) - 1, 0)), 0, f"🗑 حُذفت الصفحة {i + 1}. تقدر تتراجع.")
+    return _show(pid, did, min(i, max(len(manual.effective_plan(d)) - 1, 0)), f"🗑 حُذفت الصفحة {i + 1}. تقدر تتراجع.")
 
 
 @safe
@@ -119,3 +119,20 @@ def peek(pid, did, target):
     i, _ = _n(d, target)
     png, _, text = preview_png(pid, did, i)
     return R(pg_prev=png, pg_prev_info=text)
+
+
+# ---- the same operations, but on the page that is open in the «الترجمة» tab (cur is 0-based)
+def cur_ask_delete(pid, did, cur):
+    return ask_delete(pid, did, int(cur or 0) + 1)
+
+
+def cur_delete(pid, did, cur):
+    return delete(pid, did, int(cur or 0) + 1)
+
+
+def cur_move(pid, did, cur, to):
+    return move(pid, did, int(cur or 0) + 1, to)
+
+
+def cur_replace(pid, did, cur, file, fpage, sure):
+    return insert(pid, did, "replace", int(cur or 0) + 1, file, fpage, sure, False)
