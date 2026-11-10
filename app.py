@@ -35,9 +35,9 @@ with gr.Blocks(title="مترجم الروايات") as demo:
     timer.tick(monitor.keys_html, None, keys["kpanel"])
     job_choices = tab_translate.job_choices
     from ui.tab_keys import key_choices
-    demo.load(lambda: (gr.update(choices=job_choices()), gr.update(choices=job_choices()), gr.update(choices=key_choices()), *man["refresh"]()),
+    demo.load(lambda: (gr.update(choices=job_choices()), gr.update(choices=tab_review.review_choices()), gr.update(choices=key_choices()), *man["refresh"]()),
               None, [trans["jsel"], rev["rsel"], keys["ksel"]] + man["refresh_outs"])
-    rev["tab"].select(lambda: gr.update(choices=job_choices()), None, rev["rsel"])
+    rev["tab"].select(lambda: gr.update(choices=tab_review.review_choices()), None, rev["rsel"])
     tab_manual.select(man["refresh"], None, man["refresh_outs"])
 
 if __name__ == "__main__":

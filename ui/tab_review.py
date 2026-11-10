@@ -4,13 +4,22 @@ import gradio as gr
 from core import builder, edition, editor, jobs, monitor, quality
 from core.config import JOBS
 from .common import guard, opt, step
+from . import review_manual as RM
 from .tab_translate import job_choices
+
+
+def review_choices():
+    """What can be reviewed: the manual editor's drafts (always) and the automatic translations (full edition only)."""
+    return RM.choices() + ([] if edition.is_lite() else job_choices())
 
 
 def load_review(jid, only_flagged=False):
     guard()
     if not jid:
         raise gr.Error("اختر ملفاً")
+    m = RM.parse(jid)
+    if m:
+        return RM.load(*m, only_flagged)
     meta, units = jobs.load(jid)
     if quality.recheck(units, meta["tgt"]):
         jobs.save_units(jid, units)
@@ -24,6 +33,9 @@ def load_review(jid, only_flagged=False):
 
 def save_review(jid, rows, ctx):
     guard()
+    m = RM.parse(jid)
+    if m:
+        return RM.save(*m, rows, ctx)
     meta, units = jobs.load(jid)
     by = {u["id"]: u for u in units}
     n = 0
@@ -46,6 +58,16 @@ def run_chat(jid, instruction, rows):
     guard()
     if not instruction.strip():
         raise gr.Error("اكتب التعليمة")
+    m = RM.parse(jid)
+    if m:
+        from core import edition as _ed
+        if _ed.is_lite():
+            raise gr.Error("هذي الميزة غير متوفرة في هذي النسخة")
+        save_review(jid, rows, RM._load(*m)[2].get("ctx", ""))
+        patches = RM.instruct(*m, instruction)
+        log = "\n".join(f"- {p['id']}: {p['why']}" for p in patches[:40]) or "ما احتاج أي فقرة تعديل"
+        new_rows, _, _, _ = load_review(jid)
+        return new_rows, f"✏ عُدّلت **{len(patches)}** فقرة\n\n{log}"
     save_review(jid, rows, jobs.load(jid)[0].get("ctx", ""))
     meta, units = jobs.load(jid)
     patches = editor.run_instruction(units, instruction, meta["src"], meta["tgt"], meta["ctx"], meta["style"])
@@ -59,6 +81,11 @@ def do_replace(jid, find, repl):
     guard()
     if not find:
         raise gr.Error("اكتب الكلمة المراد استبدالها")
+    m = RM.parse(jid)
+    if m:
+        n = RM.replace(*m, find, repl)
+        rows, _, _, _ = load_review(jid)
+        return rows, f"🔁 استُبدلت **{n}** مرة"
     meta, units = jobs.load(jid)
     n = editor.find_replace(units, find, repl)
     jobs.save_units(jid, units)
@@ -69,6 +96,9 @@ def do_replace(jid, find, repl):
 def generate(jid, rows, ctx, want_pdf, want_epub, want_txt):
     guard()
     save_review(jid, rows, ctx)
+    m = RM.parse(jid)
+    if m:
+        return RM.generate(*m, want_pdf, want_epub, want_txt)
     meta, units = jobs.load(jid)
     out = JOBS / jid / "out"
     shutil.rmtree(out, ignore_errors=True)
@@ -92,10 +122,10 @@ def generate(jid, rows, ctx, want_pdf, want_epub, want_txt):
 
 def build():
     with gr.Tab("٤. المراجعة والتصدير") as tab_review:
-        step("أ", "اختر الملف", "بعد ما تنتهي الترجمة يظهر الملف هنا للمراجعة قبل التصدير.")
+        step("أ", "اختر الملف", "تظهر هنا مسودات المحرر اليدوي (وترجمات التبويب الآلي في النسخة الكاملة). اختر واحدة للمراجعة قبل التصدير.")
         opt("الملف", "قائمة الملفات التي تمت معالجتها.", "تراجع الترجمة قبل إنتاج الملف النهائي.",
             "اختر ملفاً ثم اضغط «تحميل».")
-        rsel = gr.Dropdown(job_choices(), show_label=False, value=None, interactive=True)
+        rsel = gr.Dropdown(review_choices(), show_label=False, value=None, interactive=True)
         b_load = gr.Button("تحميل", variant="primary")
         rinfo = gr.Markdown()
         step("ب", "راجع الترجمة وعدّلها")
