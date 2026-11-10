@@ -1,7 +1,7 @@
 """Tab 4: review the automatic translation, fix it, export PDF / EPUB / TXT."""
 import os, shutil
 import gradio as gr
-from core import editor, jobs, builder, monitor, quality
+from core import builder, edition, editor, jobs, monitor, quality
 from core.config import JOBS
 from .common import guard, opt, step
 from .tab_translate import job_choices
@@ -112,11 +112,12 @@ def build():
                 "تثبّت الأسماء والضمائر بين كل الأجزاء.",
                 "صحّح أي اسم أو جنس غلط. التعديل يؤثر على الأوامر القادمة، والترجمة الجاهزة تتغير فقط بالأمر الذكي أو الاستبدال.")
             ctx = gr.Textbox(show_label=False, lines=8, elem_classes="ltr")
-        step("ج", "تعديلات ذكية")
-        opt("أمر للذكاء الاصطناعي", "تكتب تعليمة والنموذج يطبقها على الفقرات المناسبة فقط.",
-            "تعدّل الأسلوب أو الحوار في كل الملف بجملة وحدة.", "مثال: «اجعل الحوار أكثر حدة». ثم اضغط «نفّذ».")
-        chat = gr.Textbox(show_label=False, placeholder="مثال: أعد صياغة الحوار ليكون أكثر حدة")
-        b_chat = gr.Button("نفّذ")
+        with gr.Group(visible=not edition.is_lite()):          # أوامر الذكاء الاصطناعي: مخفية في النسخة المخففة
+            step("ج", "تعديلات ذكية")
+            opt("أمر للذكاء الاصطناعي", "تكتب تعليمة والنموذج يطبقها على الفقرات المناسبة فقط.",
+                "تعدّل الأسلوب أو الحوار في كل الملف بجملة وحدة.", "مثال: «اجعل الحوار أكثر حدة». ثم اضغط «نفّذ».")
+            chat = gr.Textbox(show_label=False, placeholder="مثال: أعد صياغة الحوار ليكون أكثر حدة")
+            b_chat = gr.Button("نفّذ")
         with gr.Accordion("استبدال كلمة في الملف كله", open=False):
             opt("الاستبدال", "يبدل كلمة بأخرى في كل الترجمة بدون ذكاء اصطناعي.", "سريع ومضمون.",
                 "اكتب الكلمة القديمة والجديدة ثم اضغط الزر.")

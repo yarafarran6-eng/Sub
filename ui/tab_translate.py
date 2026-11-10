@@ -1,6 +1,6 @@
 """Tab 2: upload files, choose languages, follow the automatic translation live."""
 import gradio as gr
-from core import jobs, monitor
+from core import edition, jobs, monitor
 from core.keystore import load_keys
 from .common import guard, opt, step
 from .header import hero_html, banner_html
@@ -51,7 +51,7 @@ def tick(jid):
 
 
 def build():
-    with gr.Tab("٢. الترجمة الآلية"):
+    with gr.Tab("٢. الترجمة الآلية", visible=not edition.is_lite()):
         step("أ", "ارفع الملفات", "تقدر ترفع أكثر من ملف، وتترجم بالدور واحداً بعد واحد.")
         opt("الملفات", "تقبل ملفات PDF وEPUB وTXT.", "ترفع عدة كتب مرة وحدة وتتركها تشتغل.",
             "اضغط على المربع أو اسحب الملفات إليه.")
