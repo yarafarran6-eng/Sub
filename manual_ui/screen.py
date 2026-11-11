@@ -145,10 +145,10 @@ def _wire(tabs):
     C["b_cp_move"].click(h_pages.cur_move, [C["pid"], C["did"], C["cur"], C["cp_to"]], ALL)
     ask(C["b_cp_del"], "cpdel", h_pages.cur_ask_delete, [C["pid"], C["did"], C["cur"]])
     yes("cpdel", h_pages.cur_delete, [C["pid"], C["did"], C["cur"]])
-    C["cp_up"].upload(h_pages.cur_pick, C["cp_up"], [C["cp_file"], C["cp_name"]])
+    C["cp_up"].upload(h_pages.cur_pick, C["cp_up"], [C["cp_file"], C["cp_name"], C["cp_prev"]])
     ask(C["b_cp_rep"], "cprep", h_pages.cur_ask_replace, [C["pid"], C["did"], C["cur"], C["cp_file"]])
     C["cprep_yes"].click(h_pages.cur_replace, [C["pid"], C["did"], C["cur"], C["cp_file"]], ALL) \
-        .then(HIDE, None, C["cprep_g"]).then(lambda: (None, "لم تختر صورة بعد"), None, [C["cp_file"], C["cp_name"]])
+        .then(HIDE, None, C["cprep_g"]).then(lambda: (None, "لم تختر صورة بعد", gr.update(value=None, visible=False)), None, [C["cp_file"], C["cp_name"], C["cp_prev"]])
 
     # ---- preview (under the paragraphs) + final file
     C["b_pv_cur"].click(h_output.preview, S + ARS, [C["pv_img"], C["pv_info"]])

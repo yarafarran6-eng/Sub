@@ -43,7 +43,7 @@ assert manual.effective_plan(manual.load_draft(pid, did))[1]["k"] == "o"
 n0 = len(manual.effective_plan(manual.load_draft(pid, did)))
 try: h_pages.cur_ask_replace(pid, did, 1, None); raise SystemExit("asking to replace without a picture must fail")
 except gr.Error: pass
-pth, nm = h_pages.cur_pick("/tmp/mine.jpg"); assert nm.endswith("mine.jpg")
+pth, nm, pv = h_pages.cur_pick("/tmp/mine.jpg"); assert nm.endswith("mine.jpg") and pv["visible"] is True
 q = h_pages.cur_ask_replace(pid, did, 1, pth); assert "الصفحة 2" in q[1] and "mine.jpg" in q[1]
 o = h_pages.cur_replace(pid, did, 1, pth)
 assert manual.effective_plan(manual.load_draft(pid, did))[1]["k"] == "e" and v(o, "pv_img") and os.path.exists(v(o, "pv_img"))

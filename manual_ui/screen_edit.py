@@ -98,11 +98,14 @@ def build():
             put("b_cp_del", gr.Button("احذف هذي الصفحة", variant="stop"))
             danger("cpdel")
         with gr.Group(elem_classes="pcard"):
-            gr.HTML("<div class='pc-t'>🖼 استبدالها بصورة من جهازك</div><div class='pc-d'>اختر الصورة، ثم اضغط «استبدل». الصورة تتغير بحجم صفحات الكتاب.</div>")
+            gr.HTML("<div class='pc-t'>🖼 استبدالها بصورة من جهازك</div><div class='pc-d'>أعطني الصورة بأي طريقة من الثلاث، ثم اضغط «استبدل». الصورة تتغير بحجم صفحات الكتاب.</div>")
             put("cp_file", gr.State(None))
-            with gr.Row(equal_height=True):
-                put("cp_up", gr.UploadButton("📂 اختر صورة", file_types=[".png", ".jpg", ".jpeg", ".webp"], scale=1))
-                put("cp_name", gr.Markdown("لم تختر صورة بعد", elem_classes="pc-name"))
+            put("cp_up", gr.UploadButton("١. اختر صورة من جهازك", file_types=[".png", ".jpg", ".jpeg", ".webp"], elem_id="cp_up"))
+            gr.HTML("<button type='button' id='cp_paste_btn' class='dz-btn'>٢. الصق صورة منسوخة (أو اضغط Ctrl+V)</button>"
+                    "<div id='cp_zone' class='dz' tabindex='0'><b>٣. اسحب الصورة وأفلتها هنا</b>"
+                    "<div class='dz-msg'>من مجلد أو من سطح المكتب</div></div>")
+            put("cp_name", gr.Markdown("لم تختر صورة بعد", elem_classes="pc-name"))
+            put("cp_prev", gr.Image(show_label=False, interactive=False, height=170, visible=False, container=False))
             put("b_cp_rep", gr.Button("استبدل هذي الصفحة بالصورة", variant="primary"))
             danger("cprep")
     with gr.Accordion("🟥 صناديق التحديد من الملف الأصلي: لون · حذف · تحريك · حجم", open=False):

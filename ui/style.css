@@ -112,6 +112,15 @@ button .ic, .hchip .ic { margin-inline: 0.25em; }
 .pc-d { font-size: 13px; opacity: .75; margin-bottom: 4px; }
 .pc-name { display: flex; align-items: center; }
 
+/* picture-replacement card: three ways to give the picture */
+.dz-btn { width: 100%; padding: 11px; border-radius: 10px; border: 1px solid rgba(99,102,241,.45); background: transparent;
+  color: inherit; font: inherit; font-weight: 600; cursor: pointer; }
+.dz-btn:hover { background: rgba(99,102,241,.14); }
+.dz { margin-top: 8px; border: 2px dashed rgba(99,102,241,.55); border-radius: 12px; padding: 22px 12px; text-align: center; outline: none; }
+.dz:focus, .dz.dz-on { background: rgba(99,102,241,.16); border-color: #6366f1; }
+.dz-msg { font-size: 13px; opacity: .8; margin-top: 4px; }
+.dz-msg.dz-bad { color: #f87171; opacity: 1; }
+
 /* logo beside the site name */
 .brand { display: flex; align-items: center; gap: 14px; }
 .logo { display: inline-flex; flex: none; width: 56px; height: 56px; padding: 7px; border-radius: 16px; background: rgba(255,255,255,.96); box-shadow: 0 4px 14px rgba(0,0,0,.18); }

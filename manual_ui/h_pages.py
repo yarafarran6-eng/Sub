@@ -136,10 +136,10 @@ def cur_move(pid, did, cur, to):
 
 def cur_pick(file):
     if not file:
-        return None, "لم تختر صورة بعد"
+        return None, "لم تختر صورة بعد", gr.update(value=None, visible=False)
     import os
     path = path_of(file)
-    return path, "✅ " + os.path.basename(path)
+    return path, "✅ " + os.path.basename(path), gr.update(value=path, visible=True)
 
 
 @safe

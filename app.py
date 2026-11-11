@@ -4,14 +4,14 @@ from pathlib import Path
 import gradio as gr
 from core import auth, jobs, launch, monitor
 from manual_ui import screen as manual_screen
-from manual_ui.consts import PASTE_JS
+from manual_ui.consts import DROP_JS, PASTE_JS
 from ui import tab_chat, tab_keys, tab_review, tab_settings, tab_translate
 from ui.common import CSS, THEME
 from ui.header import banner_html, hero_html
 
 
 ICONS_JS = (Path(__file__).parent / "core" / "icons.js").read_text(encoding="utf-8")
-JS = "() => { (" + PASTE_JS.strip().rstrip(";") + ")();\n" + tab_chat.CHAT_JS + "\n" + ICONS_JS + " }"   # page scripts: numbered paste + chat list menu
+JS = "() => { (" + PASTE_JS.strip().rstrip(";") + ")();\n(" + DROP_JS.strip().rstrip(";") + ")();\n" + tab_chat.CHAT_JS + "\n" + ICONS_JS + " }"   # page scripts: numbered paste + chat list menu
 
 
 def tick(jid):
