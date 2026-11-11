@@ -46,12 +46,12 @@ except gr.Error: pass
 pth, nm, pv = h_pages.cur_pick("/tmp/mine.jpg"); assert nm.endswith("mine.jpg") and pv["visible"] is True
 q = h_pages.cur_ask_replace(pid, did, 1, pth); assert "الصفحة 2" in q[1] and "mine.jpg" in q[1]
 o = h_pages.cur_replace(pid, did, 1, pth)
-assert manual.effective_plan(manual.load_draft(pid, did))[1]["k"] == "e" and v(o, "pv_img") and os.path.exists(v(o, "pv_img"))
+assert manual.effective_plan(manual.load_draft(pid, did))[1]["k"] == "e" and os.path.exists(h_text.pv_now(pid, did, v(o, "cur"))[0])
 o = h_pages.cur_move(pid, did, 1, 3)
-assert manual.effective_plan(manual.load_draft(pid, did))[2]["k"] == "e" and v(o, "pv_img")
+assert manual.effective_plan(manual.load_draft(pid, did))[2]["k"] == "e" and os.path.exists(h_text.pv_now(pid, did, v(o, "cur"))[0])
 q = h_pages.cur_ask_delete(pid, did, 2); assert "الصفحة 3" in q[1]
 o = h_pages.cur_delete(pid, did, 2)
-assert len(manual.effective_plan(manual.load_draft(pid, did))) == n0 - 1 and v(o, "pv_img")
+assert len(manual.effective_plan(manual.load_draft(pid, did))) == n0 - 1 and os.path.exists(h_text.pv_now(pid, did, v(o, "cur"))[0])
 h_files.undo(*S); h_files.undo(*S); h_files.undo(*S)
 assert len(manual.effective_plan(manual.load_draft(pid, did))) == n0
 # add before / blank / delete / move / swap / range
@@ -71,5 +71,5 @@ o = h_text.ai_page(*S, True, "auto", True, "only", "auto", True)
 png = h_output.preview(*S); assert os.path.exists(v(png, "pv_img"))
 # username
 print(auth.set_username("2222", "فيصل"), auth.check("faisal", "2222"), auth.check("فيصل", "2222"))
-o = h_text.nav(*S, 0, "next"); assert v(o, "cur") == 1 and v(o, "pv_img") and "2 من" in v(o, "pv_info"), o
+o = h_text.nav(*S, 0, "next"); assert v(o, "cur") == 1 and "2 من" in h_text.pv_now(pid, did, 1)[1], o
 print("ALL OK")

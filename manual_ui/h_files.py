@@ -8,9 +8,7 @@ from .view import view, empty
 
 def _pv(out, pid, did, pos):
     """Every time the page we look at changes (open, switch draft, undo, reset) its picture appears too, no click needed."""
-    from .h_text import auto_preview
-    out.update(auto_preview(pid, did, int(pos or 0)))
-    return out
+    return out    # the picture is drawn by a separate step (screen.py), so this answer is instant
 
 
 @safe

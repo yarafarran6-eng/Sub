@@ -33,9 +33,7 @@ def nav(pid, did, cur, grp, target, how, *ars):
         pos = next((i for i, e in enumerate(eff) if e["k"] == "o" and e["p"] >= pg), int(cur))
     else:
         pos = int(target or 1) - 1
-    out = view(pid, did, pos, 0)
-    out.update(auto_preview(pid, did, pos))
-    return out
+    return view(pid, did, pos, 0)
 
 
 def auto_preview(pid, did, pos):
@@ -46,6 +44,18 @@ def auto_preview(pid, did, pos):
         return R(pv_img=png, pv_info=text)
     except Exception as e:
         return R(pv_info=f"تعذرت المعاينة: {e}")
+
+
+def pv_now(pid, did, cur):
+    """Second step after any action: draws the page we are on (also pages with no text at all)."""
+    if not pid or not did:
+        return gr.update(), gr.update()
+    try:
+        from .h_output import preview_png
+        png, _, text = preview_png(pid, did, int(cur or 0))
+        return png, text
+    except Exception as e:
+        return gr.update(), f"تعذرت المعاينة: {e}"
 
 
 @safe
