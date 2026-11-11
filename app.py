@@ -40,6 +40,25 @@ with gr.Blocks(title="مترجم الروايات") as demo:
     rev["tab"].select(lambda: gr.update(choices=tab_review.review_choices()), None, rev["rsel"])
     tab_manual.select(man["refresh"], None, man["refresh_outs"])
 
+def _patient_localhost_check():
+    """Gradio only waits 3 s for the first page request; our page is big, so that request can take longer than that
+    (first start, slow computer) and Gradio then refuses to start. Same check, but patient."""
+    import time
+    import httpx
+    from gradio import networking
+
+    def url_ok(url, *a, **k):
+        url = url.replace("0.0.0.0", "127.0.0.1")
+        for _ in range(40):
+            try:
+                if httpx.head(url, timeout=60, verify=False, trust_env=False).status_code in (200, 301, 302, 303, 307, 308, 401):
+                    return True
+            except Exception:
+                time.sleep(0.5)
+        return False
+    networking.url_ok = url_ok
+
+
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "7860"))
     if os.getenv("OPEN_BROWSER"):                       # started from the desktop shortcut / start.bat
@@ -48,6 +67,7 @@ if __name__ == "__main__":
             raise SystemExit(0)
         launch.open_when_ready(port)
     jobs.recover()
+    _patient_localhost_check()
     kw = dict(server_name=os.getenv("HOST") or ("0.0.0.0" if os.getenv("SPACE_ID") else "127.0.0.1"),
               server_port=int(os.getenv("PORT", "7860")), auth=auth.check, css=CSS, js=JS, max_file_size="200mb", show_error=True,
               favicon_path=str(Path(__file__).parent / "assets" / "logo.ico"))
