@@ -3,13 +3,16 @@
   window.__subDrop = true;
   // Three ways to give the page-replacement picture: the file button (already there), paste, drag and drop.
   // Paste and drop both end in the file button's own <input type=file>, so the server side is one single path.
-  const ZONE = "#cp_zone", INPUT = "#cp_up input[type=file]";
+  const ZONE = "#cp_zone";
+  const findInput = () =>                                            // the file button's hidden <input>, wherever Gradio put it
+    document.querySelector("#cp_up input[type=file]") || document.querySelector("#cp_up")?.parentElement?.querySelector("input[type=file]")
+    || Array.from(document.querySelectorAll("input[type=file]")).find((i) => /png|jpe?g|webp|image/i.test(i.accept || ""));
   const note = (t, bad) => {
     const z = document.querySelector(ZONE + " .dz-msg");
     if (z) { z.textContent = t; z.classList.toggle("dz-bad", !!bad); }
   };
   const feed = (file) => {
-    const input = document.querySelector(INPUT);
+    const input = findInput();
     if (!input) return note("ما لقيت خانة الرفع، افتح «إدارة هذي الصفحة» أولاً", true);
     if (!file || !/^image\//.test(file.type || "")) return note("هذا مو ملف صورة. اختر صورة PNG أو JPG أو WEBP", true);
     let f = file;

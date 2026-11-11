@@ -6,6 +6,13 @@ from .data import need, path_of
 from .view import view, empty
 
 
+def _pv(out, pid, did, pos):
+    """Every time the page we look at changes (open, switch draft, undo, reset) its picture appears too, no click needed."""
+    from .h_text import auto_preview
+    out.update(auto_preview(pid, did, int(pos or 0)))
+    return out
+
+
 @safe
 def new_file(file, progress=gr.Progress()):
     guard()
@@ -23,7 +30,7 @@ def new_file(file, progress=gr.Progress()):
     bad = textcheck.share([u["text"] for u in units if u.get("translate")])
     if bad > 0.15:
         note += f" ⚠ {round(bad * 100)}% من فقرات الملف نصها غير مقروء (ترميز الخط). اقرأها من صورة الصفحة الأصلية أو بزر «👁 اقرأ من الصورة»."
-    return view(pid, did, 0, 0, note)
+    return _pv(view(pid, did, 0, 0, note), pid, did, 0)
 
 
 @safe
@@ -39,10 +46,10 @@ def open_sel(sel):
         except ValueError as e:
             raise gr.Error(str(e), title="تعذّر الفتح")
         did = manual.ensure_draft(pid)
-        return view(pid, did, 0, 0, f"✅ فُتح الملف للتعديل مع {n} فقرة مترجمة آلياً." if n else "📂 فُتح الملف.")
+        return _pv(view(pid, did, 0, 0, f"✅ فُتح الملف للتعديل مع {n} فقرة مترجمة آلياً." if n else "📂 فُتح الملف."), pid, did, 0)
     did = manual.ensure_draft(key)
     d = manual.load_draft(key, did)
-    return view(key, did, d.get("page", 0), d.get("grp", 0), "📂 فُتح الملف من آخر مكان وقفت عنده.")
+    return _pv(view(key, did, d.get("page", 0), d.get("grp", 0), "📂 فُتح الملف من آخر مكان وقفت عنده."), key, did, d.get("page", 0))
 
 
 @safe
@@ -69,14 +76,14 @@ def switch_draft(pid, new_did):
         raise gr.Error("اختر مسودة", title="ما اخترت مسودة")
     manual.set_last_draft(pid, new_did)
     d = manual.load_draft(pid, new_did)
-    return view(pid, new_did, d.get("page", 0), d.get("grp", 0), f"📝 المسودة: {d['name']}")
+    return _pv(view(pid, new_did, d.get("page", 0), d.get("grp", 0), f"📝 المسودة: {d['name']}"), pid, new_did, d.get("page", 0))
 
 
 @safe
 def new_draft(pid):
     guard()
     need(pid)
-    return view(pid, manual.create_draft(pid), 0, 0, "✅ مسودة جديدة فاضية. المسودة السابقة محفوظة.")
+    return _pv(view(pid, manual.create_draft(pid), 0, 0, "✅ مسودة جديدة فاضية. المسودة السابقة محفوظة."), pid, manual.create_draft(pid), 0)
 
 
 @safe
@@ -85,7 +92,7 @@ def copy_draft(pid, did):
     need(pid)
     new = manual.create_draft(pid, copy_from=did)
     d = manual.load_draft(pid, new)
-    return view(pid, new, d.get("page", 0), d.get("grp", 0), "✅ نُسخت المسودة الحالية بكل ما فيها.")
+    return _pv(view(pid, new, d.get("page", 0), d.get("grp", 0), "✅ نُسخت المسودة الحالية بكل ما فيها."), pid, new, d.get("page", 0))
 
 
 @safe
@@ -111,7 +118,7 @@ def delete_draft(pid, did):
     manual.save_draft(pid, manual.load_draft(pid, did))
     new = manual.delete_draft(pid, did) or manual.create_draft(pid)
     d = manual.load_draft(pid, new)
-    return view(pid, new, d.get("page", 0), d.get("grp", 0), "🗑 حُذفت المسودة.")
+    return _pv(view(pid, new, d.get("page", 0), d.get("grp", 0), "🗑 حُذفت المسودة."), pid, new, d.get("page", 0))
 
 
 @safe
@@ -122,7 +129,7 @@ def undo(pid, did, cur, grp):
         d = manual.load_draft(pid, did)
         label = manual.undo(d)
         manual.save_draft(pid, d)
-    return view(pid, did, cur, grp, f"↩ تراجعت عن: {label}" if label else "⚠ ما فيه شي أتراجع عنه.")
+    return _pv(view(pid, did, cur, grp, f"↩ تراجعت عن: {label}" if label else "⚠ ما فيه شي أتراجع عنه."), pid, did, cur)
 
 
 @safe
@@ -138,7 +145,7 @@ def reset_all(pid, did):
         d = manual.load_draft(pid, did)
         manual.reset_all(d)
         manual.save_draft(pid, d)
-    return view(pid, did, 0, 0, "⟲ رجعت المسودة إلى البداية. تقدر تتراجع.")
+    return _pv(view(pid, did, 0, 0, "⟲ رجعت المسودة إلى البداية. تقدر تتراجع."), pid, did, 0)
 
 
 # ---- the same two actions for the OPEN page only
@@ -161,7 +168,7 @@ def undo_page(pid, did, cur, grp):
         d = manual.load_draft(pid, did)
         label = manual.undo_page(d, units, page)
         manual.save_draft(pid, d)
-    return view(pid, did, cur, grp, f"↩ تراجعت عن «{label}» في هذه الصفحة فقط." if label else "⚠ ما فيه تغيير في هذه الصفحة أتراجع عنه.")
+    return _pv(view(pid, did, cur, grp, f"↩ تراجعت عن «{label}» في هذه الصفحة فقط." if label else "⚠ ما فيه تغيير في هذه الصفحة أتراجع عنه."), pid, did, cur)
 
 
 @safe
@@ -181,4 +188,4 @@ def reset_page(pid, did, cur, grp):
         d = manual.load_draft(pid, did)
         changed = manual.reset_page_to_original(d, units, page)
         manual.save_draft(pid, d)
-    return view(pid, did, cur, grp, f"⟲ رجعت الصفحة {page + 1} للأصل. تقدر تتراجع." if changed else "هذي الصفحة أصلاً مثل الملف الأصلي، ما فيها تغييرات.")
+    return _pv(view(pid, did, cur, grp, f"⟲ رجعت الصفحة {page + 1} للأصل. تقدر تتراجع." if changed else "هذي الصفحة أصلاً مثل الملف الأصلي، ما فيها تغييرات."), pid, did, cur)
