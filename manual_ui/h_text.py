@@ -46,7 +46,7 @@ def auto_preview(pid, did, pos):
         return R(pv_info=f"تعذرت المعاينة: {e}")
 
 
-def pv_now(pid, did, cur):
+def pv_now(pid, did, cur, grp=0):
     """Second step after any action: draws the page we are on (also pages with no text at all)."""
     if not pid or not did:
         return gr.update(), gr.update()
