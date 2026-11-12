@@ -158,7 +158,7 @@ def build():
         put("b_pv_cur", gr.Button("👁 حدّث معاينة هذي الصفحة", variant="primary"))
         put("b_pv_next", gr.Button("معاينة التالية ▶"))
     put("pv_info", gr.Markdown())
-    put("pv_img", gr.Image(show_label=False, type="filepath", interactive=False))
+    put("pv_img", gr.Image(show_label=False, type="filepath", interactive=False, elem_id="pv_img"))
     with gr.Accordion("➕ إضافة فقرة جديدة في هذي الصفحة", open=False):
         with gr.Row():
             put("add_after", gr.Number(0, label="أضفها بعد الفقرة رقم (0 = بالأعلى)", precision=0, minimum=0))
