@@ -463,7 +463,7 @@ def render_original(src_pdf, pno, boxes, out_png, dpi=90):
     doc.close()
 
 
-def native_dpi(page, lo=100, hi=700):
+def native_dpi(page, lo=200, hi=700):
     """The resolution at which the page's biggest picture is shown pixel for pixel (so a scan or a pasted picture looks like the original)."""
     best = 0
     try:
