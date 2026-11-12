@@ -463,7 +463,21 @@ def render_original(src_pdf, pno, boxes, out_png, dpi=90):
     doc.close()
 
 
-def build_plan_pdf(src_pdf, entries, units, tgt, out_path=None, font=None, page_styles=None, base_dir=None, only_pos=None, png=None, dpi=100):
+def native_dpi(page, lo=100, hi=300):
+    """The resolution at which the page's biggest picture is shown pixel for pixel (so a scan or a pasted picture looks like the original)."""
+    best = 0
+    try:
+        for im in page.get_image_info():
+            w = (im.get("bbox") or (0, 0, 0, 0))
+            inch = (w[2] - w[0]) / 72
+            if inch > 1 and im.get("width"):
+                best = max(best, im["width"] / inch)
+    except Exception:
+        pass
+    return int(max(lo, min(hi, best or lo)))
+
+
+def build_plan_pdf(src_pdf, entries, units, tgt, out_path=None, font=None, page_styles=None, base_dir=None, only_pos=None, png=None, dpi=None):
     """Builds the output from the page plan: original pages, imported pages, blank pages, in the chosen order.
     only_pos: build just that one page (fast preview), and write a PNG instead of a PDF when png is given."""
     import fitz
@@ -491,7 +505,7 @@ def build_plan_pdf(src_pdf, entries, units, tgt, out_path=None, font=None, page_
         shrunk += _apply_page(out, idx, by_page.get(p, []), all_on_page.get(p, []), tgt, font, ps.get("bg"), ps.get("boxes"))
     info = {"pages": len(out), "shrunk_blocks": shrunk}
     if png:
-        out[0].get_pixmap(dpi=dpi).save(png)
+        out[0].get_pixmap(dpi=dpi or native_dpi(out[0])).save(png)
     else:
         out.subset_fonts()
         out.save(out_path, garbage=3, deflate=True)
