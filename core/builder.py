@@ -463,7 +463,7 @@ def render_original(src_pdf, pno, boxes, out_png, dpi=90):
     doc.close()
 
 
-def native_dpi(page, lo=200, hi=700):
+def native_dpi(page, lo=130, hi=700):
     """The resolution at which the page's biggest picture is shown pixel for pixel (so a scan or a pasted picture looks like the original)."""
     best = 0
     try:
@@ -474,7 +474,7 @@ def native_dpi(page, lo=200, hi=700):
                 best = max(best, im["width"] / inch)
     except Exception:
         pass
-    return int(max(lo, min(hi, best or lo)))
+    return int(min(hi, max(lo, best)))
 
 
 def build_plan_pdf(src_pdf, entries, units, tgt, out_path=None, font=None, page_styles=None, base_dir=None, only_pos=None, png=None, dpi=None):
@@ -505,7 +505,7 @@ def build_plan_pdf(src_pdf, entries, units, tgt, out_path=None, font=None, page_
         shrunk += _apply_page(out, idx, by_page.get(p, []), all_on_page.get(p, []), tgt, font, ps.get("bg"), ps.get("boxes"))
     info = {"pages": len(out), "shrunk_blocks": shrunk}
     if png:
-        out[0].get_pixmap(dpi=dpi or native_dpi(out[0])).save(png)
+        out[0].get_pixmap(dpi=dpi or native_dpi(out[0], hi=1800 * 72 / max(out[0].rect.height, 1))).save(png)
     else:
         out.subset_fonts()
         out.save(out_path, garbage=3, deflate=True)
