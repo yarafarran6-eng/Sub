@@ -22,7 +22,7 @@ def preview_png(pid, did, pos):
             pass
     t0 = time.time()
     builder.build_plan_pdf(manual.source_path(pid), eff, manual.merged_units(units, d), "ar", None, d.get("font") or None,
-                           d["pstyle"], manual._dir(pid), only_pos=pos, png=out, dpi=100)
+                           d["pstyle"], manual._dir(pid), only_pos=pos, png=out, dpi=150)
     return out, pos, f"معاينة الصفحة {pos + 1} من {len(eff)} ({label(eff[pos])}) · {time.time() - t0:.1f} ثانية"
 
 
