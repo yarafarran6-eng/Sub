@@ -475,22 +475,17 @@ def import_page(pid, path, page_no=1, size=None):
 
 
 def page_size(pid, d, eff_pos):
-    """Size (width, height) of the page at this position of the output, to fit an imported page to it."""
+    """The book's page size (the most common one among the original pages), so every imported page has exactly the same width and height."""
     import fitz
-    eff = effective_plan(d)
-    if not eff:
-        return None
-    e = eff[max(0, min(eff_pos, len(eff) - 1))]
+    from collections import Counter
     try:
-        if e["k"] == "o":
-            r = fitz.open(source_path(pid))[e["p"]].rect
-        elif e["k"] == "e":
-            r = fitz.open(str(_dir(pid) / e["f"]))[0].rect
-        else:
-            return None
-        return (r.width, r.height)
+        doc = fitz.open(source_path(pid))
+        sizes = Counter((round(p.rect.width), round(p.rect.height)) for p in doc)
+        if sizes:
+            return tuple(float(x) for x in sizes.most_common(1)[0][0])
     except Exception:
-        return None
+        pass
+    return None
 
 
 # ----------------------------------------------------------------------------- paragraphs
