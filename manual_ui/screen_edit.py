@@ -69,8 +69,7 @@ def _slot(i):
             put(f"s{i}_ocr", gr.Button("👁 اقرأ من الصورة", size="sm"))
             put(f"s{i}_num", gr.Button("🔢 رقّم الأسطر", size="sm"))
             put(f"s{i}_del", gr.Button("🗑 حذف الفقرة", size="sm"))
-        with gr.Accordion("🎨 تنسيق هذي الفقرة (اضغط السهم)", open=False):
-            style_block(f"s{i}_", False)
+            put(f"s{i}_sty", gr.Button("🎨 نسّق هذي الفقرة", size="sm"))
     put(f"s{i}_g", g)
 
 
@@ -87,6 +86,10 @@ def build():
     with gr.Accordion("🎨 تنسيق الصفحة كلها: خط، حجم، لون، تحديد، مكان، خلفية (اضغط السهم)", open=False):
         gr.HTML("<div class='mini'>يطبَّق على كل فقرات الصفحة. وتنسيق فقرة بعينها (تحت الفقرة) يغلب تنسيق الصفحة.</div>")
         style_block("p_", True)
+    with gr.Accordion("🎨 تنسيق فقرة واحدة: اكتب رقمها أو اضغط «🎨 نسّق هذي الفقرة» تحتها (اضغط السهم)", open=False) as qacc:
+        put("q_n", gr.Number(1, label="رقم الفقرة (الأرقام ظاهرة فوق كل فقرة)", precision=0, minimum=1))
+        style_block("q_", False)
+    put("q_acc", qacc)
     with gr.Accordion("🗂 إدارة هذي الصفحة: نقل · حذف · استبدال بصورة", open=False):
         with gr.Group(elem_classes="pcard"):
             gr.HTML("<div class='pc-t'>↕ نقل الصفحة</div><div class='pc-d'>اكتب رقم المكان الجديد للصفحة، ثم اضغط «انقل».</div>")

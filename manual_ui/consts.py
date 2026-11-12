@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 from core import builder
 
-SLOTS = int(os.getenv("SUB_SLOTS", "15"))          # paragraphs shown at once on one page
+SLOTS = int(os.getenv("SUB_SLOTS", "30"))          # paragraphs shown at once on one page
 HL_DEFAULT = "#fff2a8"
 DROP_JS = (Path(__file__).resolve().parent.parent / "core" / "dropzone.js").read_text(encoding="utf-8")
 PASTE_JS = (Path(__file__).resolve().parent.parent / "core" / "paste.js").read_text(encoding="utf-8")

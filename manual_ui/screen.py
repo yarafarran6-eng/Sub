@@ -48,9 +48,9 @@ def nav_outputs():
     """Every component view() can fill: the fixed ones plus the paragraph slots and page panel, without their buttons."""
     import re
     fixed = {"pid", "did", "cur", "grp", "page", "info", "note", "pager", "pg_target", "last", "curbar", "b_grp_prev", "b_grp_next", "bx_img", "bx_pick",
-             "bx_info", "r_on", "r_a", "r_b", "r_out", "plan", "files_sel", "dsel", "chap", "ctx", "style", "font", "orig", "ai_model", "ai_checker", "saved", "bg_mode", "bg_dir", "bg_c1", "bg_c2"}
+             "bx_info", "r_on", "r_a", "r_b", "r_out", "plan", "files_sel", "dsel", "chap", "ctx", "style", "font", "orig", "ai_model", "ai_checker", "saved", "bg_mode", "bg_dir", "bg_c1", "bg_c2", "q_n"}
     skip = re.compile(r"(_rst|_back|_ai|_rev|_ocr|_num|_step)$|_mv_")
-    return [c for k, c in C.items() if k in fixed or (re.match(r"^(p_|s\d+_)", k) and not skip.search(k))]
+    return [c for k, c in C.items() if k in fixed or (re.match(r"^(p_|q_)", k) and not skip.search(k)) or re.match(r"^s\d+_(g|head|en|ar|del)$", k)]
 
 
 def _wire(tabs):
@@ -117,27 +117,31 @@ def _wire(tabs):
     C["ctx"].blur(h_text.ai_cfg, [C["pid"], C["did"], C["ctx"], C["style"]], C["saved"])
     C["b_ctx"].click(h_text.ai_ctx, [C["pid"], C["did"]], C["ctx"])
 
-    # ---- style blocks: the page one (px "p_") and one under every paragraph (px "s<i>_")
+    # ---- style blocks: the page one (px "p_") and ONE shared paragraph one (px "q_", paragraph number in q_n)
     CT = ("font", "size", "align", "tOn", "tc", "hOn", "hc", "dx", "dy")
     BG = [C[k] for k in ("bg_mode", "bg_c1", "bg_c2", "bg_dir")]
-    blocks = [("p_", panel.PAGE, lambda grp: 1)] + [(f"s{i}_", panel.PARA, lambda grp, i=i: int(grp) * SLOTS + i + 1) for i in range(SLOTS)]
-    for px, scope, pn in blocks:
+    SQ = S + [C["q_n"]]
+    for px, scope in (("p_", panel.PAGE), ("q_", panel.PARA)):
         ctl = [C[px + k] for k in CT]
         extra = BG if scope == panel.PAGE else []
-        dummy = (lambda: ("none", "#ffffff", "#cccccc", "vertical"))
+        pn = (lambda qn: 1) if scope == panel.PAGE else (lambda qn: qn)
         if scope == panel.PAGE:
-            fn_apply = lambda pid, did, cur, grp, *v: panel.apply(pid, did, cur, grp, panel.PAGE, 1, *v)
+            fn_apply = lambda pid, did, cur, grp, qn, *v: panel.apply(pid, did, cur, grp, panel.PAGE, 1, *v)
         else:
-            fn_apply = lambda pid, did, cur, grp, *v, pn=pn: panel.apply(pid, did, cur, grp, panel.PARA, pn(grp), *v, "none", "#ffffff", "#cccccc", "vertical")
+            fn_apply = lambda pid, did, cur, grp, qn, *v: panel.apply(pid, did, cur, grp, panel.PARA, qn, *v, "none", "#ffffff", "#cccccc", "vertical")
         OUT = ctl + extra + [C["last"], C["saved"]]
         for c in ctl + extra:
-            c.input(fn_apply, S + ctl + extra, OUT)
+            c.input(fn_apply, SQ + ctl + extra, OUT)
         for w in ("font", "size", "align", "tcolor", "hl", "pos") + (("bg",) if scope == panel.PAGE else ()):
-            C[f"{px}{w}_rst"].click(lambda pid, did, cur, grp, w=w, px=px, scope=scope, pn=pn: panel.reset(pid, did, cur, grp, scope, pn(grp), w, px), S, OUT)
-            C[f"{px}{w}_back"].click(lambda pid, did, cur, grp, w=w, px=px, scope=scope, pn=pn: panel.stepback(pid, did, cur, grp, scope, pn(grp), w, px), S, OUT)
+            C[f"{px}{w}_rst"].click(lambda pid, did, cur, grp, qn, w=w, px=px, scope=scope, pn=pn: panel.reset(pid, did, cur, grp, scope, pn(qn), w, px), SQ, OUT)
+            C[f"{px}{w}_back"].click(lambda pid, did, cur, grp, qn, w=w, px=px, scope=scope, pn=pn: panel.stepback(pid, did, cur, grp, scope, pn(qn), w, px), SQ, OUT)
         for k in ("left", "right", "up", "down"):
-            C[f"{px}mv_{k}"].click(lambda pid, did, cur, grp, step, k=k, px=px, scope=scope, pn=pn: panel.move(pid, did, cur, grp, scope, pn(grp), k, step, px),
-                                   S + [C[px + "step"]], OUT)
+            C[f"{px}mv_{k}"].click(lambda pid, did, cur, grp, qn, step, k=k, px=px, scope=scope, pn=pn: panel.move(pid, did, cur, grp, scope, pn(qn), k, step, px),
+                                   SQ + [C[px + "step"]], OUT)
+    QOUT = [C["q_n"], C["q_acc"]] + [C["q_" + k] for k in CT]
+    for i in range(SLOTS):
+        C[f"s{i}_sty"].click(lambda pid, did, cur, grp, i=i: h_text.style_slot(pid, did, cur, grp, i), S, QOUT, scroll_to_output=True)
+    C["q_n"].change(h_text.style_load, SQ, QOUT[2:])
     C["bg_preset"].input(lambda pid, did, cur, grp, name: panel.preset(pid, did, cur, grp, panel.PAGE, 1, name), S + [C["bg_preset"]], [C[k] for k in ("bg_mode", "bg_c1", "bg_c2", "bg_dir", "last")])
     ask(C["b_page_all"], "pageall", lambda pid: (gr.update(visible=True), "هل أنت متأكد؟ ستفقد كل تنسيقات هذي الصفحة (خطوط وأحجام وألوان وخلفية ومواضع كل فقراتها) وترجع مثل الأصل. ترجماتك تبقى. تقدر تتراجع بزر «تراجع» بعد التنفيذ."), C["pid"])
     yes("pageall", panel.reset_everything, S)

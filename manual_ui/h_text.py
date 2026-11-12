@@ -53,6 +53,28 @@ def flip(pid, did, cur, grp, target, how, *ars):
 
 
 @safe
+def style_slot(pid, did, cur, grp, i):
+    """«🎨 نسّق هذي الفقرة»: the shared paragraph panel opens on paragraph number grp*SLOTS+i+1."""
+    need(pid)
+    from . import panel
+    from .consts import SLOTS
+    d, allit, e = panel._now(pid, did, cur, grp, panel.PARA, 1)
+    n = int(grp) * SLOTS + i + 1
+    out = R(q_n=n, q_acc=gr.update(open=True))
+    out.update(panel.values(d, allit, e, panel.PARA, n, "q_"))
+    return out
+
+
+@safe
+def style_load(pid, did, cur, grp, n):
+    """The number in the panel changed: show that paragraph's style."""
+    need(pid)
+    from . import panel
+    d, allit, e = panel._now(pid, did, cur, grp, panel.PARA, n)
+    return panel.values(d, allit, e, panel.PARA, int(n or 1), "q_")
+
+
+@safe
 def show(pid, did, cur, grp):
     """Step 2: the paragraphs and panels of the page we moved to."""
     return view(pid, did, cur, 0)

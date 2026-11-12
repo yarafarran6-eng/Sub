@@ -22,8 +22,8 @@ assert list(manual.load_draft(pid, did)["tr"].values()) == ["الفصل الأو
 uid = manual.page_items(manual.load(pid)[1], manual.load_draft(pid, did), 0)[1]["uid"]
 for kw in (dict(size=14), dict(size=16), dict(font="Amiri")):
     d = manual.load_draft(pid, did); manual.set_ustyle(d, uid, **kw); manual.save_draft(pid, d)
-o = panel.stepback(*S, "para", 2, "size", "s1_"); assert manual.load_draft(pid, did)["ustyle"][uid] == {"size": 14, "font": "Amiri"}, manual.load_draft(pid, did)["ustyle"]
-o = panel.reset(*S, "para", 2, "size", "s1_"); assert manual.load_draft(pid, did)["ustyle"][uid] == {"font": "Amiri"}
+o = panel.stepback(*S, "para", 2, "size", "q_"); assert manual.load_draft(pid, did)["ustyle"][uid] == {"size": 14, "font": "Amiri"}, manual.load_draft(pid, did)["ustyle"]
+o = panel.reset(*S, "para", 2, "size", "q_"); assert manual.load_draft(pid, did)["ustyle"][uid] == {"font": "Amiri"}
 o = panel.apply(*S, "page", 1, "Tajawal", 110, "center", True, "#222222", False, "#fff2a8", 3, 0, "gradient", "#ffffff", "#000000", "vertical")
 assert manual.load_draft(pid, did)["pstyle"]["0"]["scale"] == 110
 panel.move(*S, "page", 1, "right", 5, "p_"); panel.preset(*S, "page", 1, "تدرج: ذهبي")
@@ -84,3 +84,9 @@ for _p in range(len(manual.effective_plan(manual.load_draft(pid, did)))):
         _bad = [k for k in view(pid, did, _p, _g) if k not in _ok]
         assert not _bad, [k for k, c in C.items() if c in _bad]
 print("NAVOUT OK")
+
+# one shared paragraph panel: the slot button opens it on the right paragraph, and the component count stays small
+o = h_text.style_slot(*S, 1)
+assert v(o, "q_n") == 2 and o[C["q_acc"]]["open"] is True and C["q_font"] in o
+assert len(C) < 520, len(C)
+print("PANEL OK", len(C))

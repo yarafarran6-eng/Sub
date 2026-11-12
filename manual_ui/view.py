@@ -95,8 +95,8 @@ def view(pid, did, pos, grp, msg=""):
             f"s{i}_en": u(value=shown), f"s{i}_ar": u(value=it["ar"], interactive=not it["deleted"]),
             f"s{i}_del": u(value="↩ استعادة الفقرة" if it["deleted"] else ("🗑 حذف الفقرة المضافة" if it["custom"] else "🗑 حذف الفقرة"))}))
     out.update(panel.values(d, items_all, e, panel.PAGE, 1, "p_"))
-    for i in range(len(items)):
-        out.update(panel.values(d, items_all, e, panel.PARA, grp * SLOTS + i + 1, f"s{i}_"))
+    out.update(R(q_n=1))
+    out.update(panel.values(d, items_all, e, panel.PARA, 1, "q_"))
     r = d["range"]
     out.update(R(r_on=u(value=r["on"]), r_a=u(value=r["a"]), r_b=u(value=r["b"]), r_out=u(value=r["outside"]),
                  plan=[[i + 1, label(x), status(x)] for i, x in enumerate(eff)],
