@@ -44,10 +44,21 @@ def build():
     return {"files_sel": C["files_sel"], "refresh": refresh, "refresh_outs": [C["files_sel"], C["ai_model"], C["ai_checker"]]}
 
 
+def nav_outputs():
+    """Every component view() can fill: the fixed ones plus the paragraph slots and page panel, without their buttons."""
+    import re
+    fixed = {"pid", "did", "cur", "grp", "page", "info", "note", "pager", "pg_target", "last", "curbar", "b_grp_prev", "b_grp_next", "bx_img", "bx_pick",
+             "bx_info", "r_on", "r_a", "r_b", "r_out", "plan", "files_sel", "dsel", "chap", "ctx", "style", "font", "orig", "ai_model", "ai_checker", "saved", "bg_mode", "bg_dir", "bg_c1", "bg_c2"}
+    skip = re.compile(r"(_rst|_back|_ai|_rev|_ocr|_num|_step)$|_mv_")
+    return [c for k, c in C.items() if k in fixed or (re.match(r"^(p_|s\d+_)", k) and not skip.search(k))]
+
+
 def _wire(tabs):
     ALL = list(C.values())
     S = [C["pid"], C["did"], C["cur"], C["grp"]]
     ARS = [C[f"s{i}_ar"] for i in range(SLOTS)]
+    # page flips only need the outputs view() can set (~1/3 of all components): far less for the browser to process
+    NAVOUT = nav_outputs()
     AIS = [C[k] for k in ("ai_model", "ai_fb", "ai_mode", "ai_checker", "ai_cfb")]
     # the picture of the page arrives as a SECOND step after the action, so clicks answer at once and the picture follows
     P = lambda ev: ev.then(h_text.pv_now, S, [C["pv_img"], C["pv_info"]], show_progress="hidden")
@@ -80,8 +91,8 @@ def _wire(tabs):
     # ---- navigation
     NAV = S + [C["page"]]
     for key, how in (("b_prev", "prev"), ("b_next", "next"), ("b_go", "go"), ("b_todo", "todo")):
-        P(C[key].click(lambda *a, how=how: h_text.nav(*a[:5], how, *a[5:]), NAV + ARS, ALL))
-    P(C["chap"].input(lambda pid, did, cur, grp, ch, *a: h_text.nav(pid, did, cur, grp, ch, "chap", *a), S + [C["chap"]] + ARS, ALL))
+        P(C[key].click(lambda *a, how=how: h_text.nav(*a[:5], how, *a[5:]), NAV + ARS, NAVOUT))
+    P(C["chap"].input(lambda pid, did, cur, grp, ch, *a: h_text.nav(pid, did, cur, grp, ch, "chap", *a), S + [C["chap"]] + ARS, NAVOUT))
     C["b_grp_prev"].click(lambda pid, did, cur, grp, *a: h_text.group(pid, did, cur, grp, -1, *a), S + ARS, ALL)
     C["b_grp_next"].click(lambda pid, did, cur, grp, *a: h_text.group(pid, did, cur, grp, 1, *a), S + ARS, ALL)
     C["b_save"].click(h_text.save_page, S + ARS, C["saved"])
@@ -154,7 +165,7 @@ def _wire(tabs):
 
     # ---- preview (under the paragraphs) + final file
     C["b_pv_cur"].click(h_output.preview, S + ARS, [C["pv_img"], C["pv_info"]])
-    P(C["b_pv_prev"].click(lambda *a: h_text.nav(*a[:5], "prev", *a[5:]), NAV + ARS, ALL))
-    P(C["b_pv_next"].click(lambda *a: h_text.nav(*a[:5], "next", *a[5:]), NAV + ARS, ALL))
+    P(C["b_pv_prev"].click(lambda *a: h_text.nav(*a[:5], "prev", *a[5:]), NAV + ARS, NAVOUT))
+    P(C["b_pv_next"].click(lambda *a: h_text.nav(*a[:5], "next", *a[5:]), NAV + ARS, NAVOUT))
     C["b_build"].click(h_output.build, S + ARS, C["out"])
     C["font"].input(h_output.default_font, [C["pid"], C["did"], C["font"]], C["saved"])

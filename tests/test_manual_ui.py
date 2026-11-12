@@ -73,3 +73,13 @@ png = h_output.preview(*S); assert os.path.exists(v(png, "pv_img"))
 print(auth.set_username("2222", "فيصل"), auth.check("faisal", "2222"), auth.check("فيصل", "2222"))
 o = h_text.nav(*S, 0, "next"); assert v(o, "cur") == 1 and "2 من" in h_text.pv_now(pid, did, 1)[1], o
 print("ALL OK")
+
+# page flips send only a subset of outputs: view() must never return anything outside it
+from manual_ui.screen import nav_outputs
+from manual_ui.view import view
+_ok = set(nav_outputs())
+for _p in range(len(manual.effective_plan(manual.load_draft(pid, did)))):
+    for _g in (0, 1):
+        _bad = [k for k in view(pid, did, _p, _g) if k not in _ok]
+        assert not _bad, [k for k, c in C.items() if c in _bad]
+print("NAVOUT OK")
