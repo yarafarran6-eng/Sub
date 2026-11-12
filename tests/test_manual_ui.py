@@ -71,7 +71,8 @@ o = h_text.ai_page(*S, True, "auto", True, "only", "auto", True)
 png = h_output.preview(*S); assert os.path.exists(v(png, "pv_img"))
 # username
 print(auth.set_username("2222", "فيصل"), auth.check("faisal", "2222"), auth.check("فيصل", "2222"))
-o = h_text.nav(*S, 0, "next"); assert v(o, "cur") == 1 and "2 من" in h_text.pv_now(pid, did, 1)[1], o
+pos, png, txt = h_text.flip(*S, 0, "next"); assert pos == 1 and os.path.exists(png) and "2 من" in txt
+o = h_text.show(pid, did, pos, 0); assert v(o, "cur") == 1 and "2 من" in h_text.pv_now(pid, did, 1)[1], o
 print("ALL OK")
 
 # page flips send only a subset of outputs: view() must never return anything outside it

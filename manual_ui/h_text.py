@@ -12,11 +12,7 @@ from .reg import R
 from .view import view
 
 
-@safe
-def nav(pid, did, cur, grp, target, how, *ars):
-    guard()
-    need(pid)
-    autosave(pid, did, cur, grp, ars)
+def _target(pid, did, cur, target, how):
     meta, units, d = load_all(pid, did)
     eff = manual.effective_plan(d)
     if how == "next":
@@ -33,7 +29,33 @@ def nav(pid, did, cur, grp, target, how, *ars):
         pos = next((i for i, e in enumerate(eff) if e["k"] == "o" and e["p"] >= pg), int(cur))
     else:
         pos = int(target or 1) - 1
-    return view(pid, did, pos, 0)
+    return max(0, min(pos, len(eff) - 1)) if eff else 0
+
+
+@safe
+def nav(pid, did, cur, grp, target, how, *ars):
+    guard()
+    need(pid)
+    autosave(pid, did, cur, grp, ars)
+    return view(pid, did, _target(pid, did, cur, target, how), 0)
+
+
+@safe
+def flip(pid, did, cur, grp, target, how, *ars):
+    """Step 1 of a page change: save what was typed, pick the page and draw its picture. Only three small answers, so it is instant;
+    the paragraphs follow in step 2 (show)."""
+    guard()
+    need(pid)
+    autosave(pid, did, cur, grp, ars)
+    pos = _target(pid, did, cur, target, how)
+    png, text = pv_now(pid, did, pos)
+    return pos, png, text
+
+
+@safe
+def show(pid, did, cur, grp):
+    """Step 2: the paragraphs and panels of the page we moved to."""
+    return view(pid, did, cur, 0)
 
 
 def auto_preview(pid, did, pos):

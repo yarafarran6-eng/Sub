@@ -62,6 +62,9 @@ def _wire(tabs):
     AIS = [C[k] for k in ("ai_model", "ai_fb", "ai_mode", "ai_checker", "ai_cfb")]
     # the picture of the page arrives as a SECOND step after the action, so clicks answer at once and the picture follows
     P = lambda ev: ev.then(h_text.pv_now, S, [C["pv_img"], C["pv_info"]], show_progress="hidden")
+    # page flips: step 1 answers with the picture at once, step 2 fills the paragraphs
+    FLIP = [C["cur"], C["pv_img"], C["pv_info"]]
+    F = lambda ev: ev.then(h_text.show, S, NAVOUT, show_progress="hidden")
     go_edit = lambda ev: P(ev.then(lambda: gr.Tabs(selected="edit"), None, tabs))
 
     def ask(btn, name, fn, inputs):
@@ -91,8 +94,8 @@ def _wire(tabs):
     # ---- navigation
     NAV = S + [C["page"]]
     for key, how in (("b_prev", "prev"), ("b_next", "next"), ("b_go", "go"), ("b_todo", "todo")):
-        P(C[key].click(lambda *a, how=how: h_text.nav(*a[:5], how, *a[5:]), NAV + ARS, NAVOUT))
-    P(C["chap"].input(lambda pid, did, cur, grp, ch, *a: h_text.nav(pid, did, cur, grp, ch, "chap", *a), S + [C["chap"]] + ARS, NAVOUT))
+        F(C[key].click(lambda *a, how=how: h_text.flip(*a[:5], how, *a[5:]), NAV + ARS, FLIP))
+    F(C["chap"].input(lambda pid, did, cur, grp, ch, *a: h_text.flip(pid, did, cur, grp, ch, "chap", *a), S + [C["chap"]] + ARS, FLIP))
     C["b_grp_prev"].click(lambda pid, did, cur, grp, *a: h_text.group(pid, did, cur, grp, -1, *a), S + ARS, ALL)
     C["b_grp_next"].click(lambda pid, did, cur, grp, *a: h_text.group(pid, did, cur, grp, 1, *a), S + ARS, ALL)
     C["b_save"].click(h_text.save_page, S + ARS, C["saved"])
@@ -165,7 +168,7 @@ def _wire(tabs):
 
     # ---- preview (under the paragraphs) + final file
     C["b_pv_cur"].click(h_output.preview, S + ARS, [C["pv_img"], C["pv_info"]])
-    P(C["b_pv_prev"].click(lambda *a: h_text.nav(*a[:5], "prev", *a[5:]), NAV + ARS, NAVOUT))
-    P(C["b_pv_next"].click(lambda *a: h_text.nav(*a[:5], "next", *a[5:]), NAV + ARS, NAVOUT))
+    F(C["b_pv_prev"].click(lambda *a: h_text.flip(*a[:5], "prev", *a[5:]), NAV + ARS, FLIP))
+    F(C["b_pv_next"].click(lambda *a: h_text.flip(*a[:5], "next", *a[5:]), NAV + ARS, FLIP))
     C["b_build"].click(h_output.build, S + ARS, C["out"])
     C["font"].input(h_output.default_font, [C["pid"], C["did"], C["font"]], C["saved"])
