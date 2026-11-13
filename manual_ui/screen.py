@@ -140,7 +140,7 @@ def _wire(tabs):
                                    SQ + [C[px + "step"]], OUT)
     QOUT = [C["q_n"], C["q_acc"]] + [C["q_" + k] for k in CT]
     for i in range(SLOTS):
-        C[f"s{i}_sty"].click(lambda pid, did, cur, grp, i=i: h_text.style_slot(pid, did, cur, grp, i), S, QOUT, scroll_to_output=True)
+        C[f"s{i}_sty"].click(lambda pid, did, cur, grp, i=i: h_text.style_slot(pid, did, cur, grp, i), S, QOUT)
     C["q_n"].change(h_text.style_load, SQ, QOUT[2:])
     C["bg_preset"].input(lambda pid, did, cur, grp, name: panel.preset(pid, did, cur, grp, panel.PAGE, 1, name), S + [C["bg_preset"]], [C[k] for k in ("bg_mode", "bg_c1", "bg_c2", "bg_dir", "last")])
     ask(C["b_page_all"], "pageall", lambda pid: (gr.update(visible=True), "هل أنت متأكد؟ ستفقد كل تنسيقات هذي الصفحة (خطوط وأحجام وألوان وخلفية ومواضع كل فقراتها) وترجع مثل الأصل. ترجماتك تبقى. تقدر تتراجع بزر «تراجع» بعد التنفيذ."), C["pid"])

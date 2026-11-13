@@ -11,7 +11,11 @@ from ui.header import banner_html, hero_html
 
 
 ICONS_JS = (Path(__file__).parent / "core" / "icons.js").read_text(encoding="utf-8")
-JS = "() => { (" + PASTE_JS.strip().rstrip(";") + ")();\n(" + DROP_JS.strip().rstrip(";") + ")();\n" + tab_chat.CHAT_JS + "\n" + ICONS_JS + " }"   # page scripts: numbered paste + chat list menu
+# the ONE style panel jumps under the paragraph whose «🎨 تنسيق» button was pressed
+MOVE_JS = """document.addEventListener("click", (ev) => { const b = ev.target.closest && ev.target.closest('[id^="sty_"]'); if (!b) return;
+  const i = b.id.slice(4); setTimeout(() => { try { const s = document.getElementById("slot_" + i), p = document.getElementById("q_panel");
+  if (s && p) { if (s.nextElementSibling !== p) s.after(p); p.scrollIntoView({ block: "nearest", behavior: "smooth" }); } } catch (e) {} }, 250); }, true);"""
+JS = "() => { (" + PASTE_JS.strip().rstrip(";") + ")();\n(" + DROP_JS.strip().rstrip(";") + ")();\n" + tab_chat.CHAT_JS + "\n" + ICONS_JS + "\n" + MOVE_JS + " }"   # page scripts: numbered paste + chat list menu
 
 
 def tick(jid):

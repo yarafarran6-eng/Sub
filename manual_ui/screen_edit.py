@@ -58,7 +58,7 @@ def style_block(px, page):
 
 
 def _slot(i):
-    with gr.Group(visible=False, elem_classes="slotcard") as g:
+    with gr.Group(visible=False, elem_classes="slotcard", elem_id=f"slot_{i}") as g:
         put(f"s{i}_head", gr.HTML())
         with gr.Row():
             put(f"s{i}_ar", gr.Textbox(label="الترجمة العربية", lines=4, max_lines=16, interactive=True, elem_classes="arbox", rtl=True))
@@ -69,7 +69,7 @@ def _slot(i):
             put(f"s{i}_ocr", gr.Button("👁 اقرأ من الصورة", size="sm"))
             put(f"s{i}_num", gr.Button("🔢 رقّم الأسطر", size="sm"))
             put(f"s{i}_del", gr.Button("🗑 حذف الفقرة", size="sm"))
-            put(f"s{i}_sty", gr.Button("🎨 نسّق هذي الفقرة", size="sm"))
+            put(f"s{i}_sty", gr.Button("🎨 تنسيق: خط، لون، مكان", size="sm", elem_id=f"sty_{i}"))
     put(f"s{i}_g", g)
 
 
@@ -86,7 +86,7 @@ def build():
     with gr.Accordion("🎨 تنسيق الصفحة كلها: خط، حجم، لون، تحديد، مكان، خلفية (اضغط السهم)", open=False):
         gr.HTML("<div class='mini'>يطبَّق على كل فقرات الصفحة. وتنسيق فقرة بعينها (تحت الفقرة) يغلب تنسيق الصفحة.</div>")
         style_block("p_", True)
-    with gr.Accordion("🎨 تنسيق فقرة واحدة: اكتب رقمها أو اضغط «🎨 نسّق هذي الفقرة» تحتها (اضغط السهم)", open=False) as qacc:
+    with gr.Accordion("🎨 تنسيق الفقرة: يظهر تحت الفقرة اللي تضغط زر «🎨 تنسيق» تحتها", open=False, elem_id="q_panel") as qacc:
         put("q_n", gr.Number(1, label="رقم الفقرة (الأرقام ظاهرة فوق كل فقرة)", precision=0, minimum=1))
         style_block("q_", False)
     put("q_acc", qacc)
