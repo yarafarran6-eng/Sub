@@ -231,8 +231,10 @@ def _apply_page(doc, pno, us, obstacles, tgt, default_family=None, bg=None, bedi
         if rtl and u.get("align") != "center":
             x0, x1 = W - x1, W - x0                      # mirror for right-to-left reading
         dx, dy = float(u.get("dx") or 0), float(u.get("dy") or 0)
+        moved = bool(dx or dy)
+        explicit = bool(u.get("size_abs")) or abs(float(u.get("size_scale", 1.0)) - 1) > 1e-6
         rect = fitz.Rect(x0 + dx, y0 + dy, x1 + dx, max(y1, min(limit, ymax)) + dy)
-        ymax += dy
+        ymax = page.rect.y1 - 6 if moved else ymax        # a paragraph you moved is no longer squeezed by what was below its old place
         a = u.get("align", "left")
         align = {"left": "right", "right": "left", "center": "center"}[a] if rtl else a
         if u.get("align_ov") in ("right", "left", "center", "justify"):      # an alignment you chose yourself
@@ -259,7 +261,7 @@ def _apply_page(doc, pno, us, obstacles, tgt, default_family=None, bg=None, bedi
         if scratch is None:
             scratch = fitz.open()
             scratch.new_page(width=page.rect.width, height=page.rect.height)
-        if h0 < size0 * 1.9 and "\n" not in u["tr"]:        # it was one line: keep it one line, widen the box if needed
+        if h0 < size0 * 1.9 and "\n" not in u["tr"] and not moved:        # it was one line: keep it one line, widen the box if needed
             lo, hi = 8.0, W - 8.0
             ob = fitz.Rect(x0, y0, x1, y1)
             cen = fitz.Point((ob.x0 + ob.x1) / 2, (ob.y0 + ob.y1) / 2)
@@ -280,6 +282,9 @@ def _apply_page(doc, pno, us, obstacles, tgt, default_family=None, bg=None, bedi
                     hi = min(hi, vx0 - 2)
             if hi - lo > rect.width:
                 rect = _widen_one_line(scratch, page, rect, body, css, arch, size, align, lo, hi, h0)
+        if moved or explicit:                 # you chose the size or the place: the text keeps its size, the box grows to hold it
+            rect = _grow_to_need(scratch, page, rect, body, css, arch)
+            ymax = max(ymax, rect.y1)
         if u.get("hl"):                       # a coloured box around the text: measure the real text height first
             sp, _ = _fit(_fresh(scratch, page), rect, body, css, arch, ymax)[1:]
             used = fitz.Rect(rect.x0, rect.y0, rect.x1, rect.y0 + max(size * 1.3, _fit_height(rect, sp)))
@@ -292,6 +297,16 @@ def _apply_page(doc, pno, us, obstacles, tgt, default_family=None, bg=None, bedi
     if scratch is not None:
         scratch.close()
     return shrunk
+
+
+def _grow_to_need(scratch, page, rect, body, css, arch):
+    """The box tall enough for the text at its real size (no shrinking), down to the bottom of the page at most."""
+    import fitz
+    tall = fitz.Rect(rect.x0, rect.y0, rect.x1, max(rect.y1, page.rect.y1 - 4))
+    spare, _ = _fresh(scratch, page).insert_htmlbox(tall, body, css=css, archive=arch, scale_low=1)
+    if spare < 0:
+        return tall
+    return fitz.Rect(rect.x0, rect.y0, rect.x1, min(tall.y1, rect.y0 + (tall.height - spare) + 3))
 
 
 def _fresh(scratch, page):
