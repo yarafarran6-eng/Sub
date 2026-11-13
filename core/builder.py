@@ -232,17 +232,14 @@ def _apply_page(doc, pno, us, obstacles, tgt, default_family=None, bg=None, bedi
             x0, x1 = W - x1, W - x0                      # mirror for right-to-left reading
         dx, dy = float(u.get("dx") or 0), float(u.get("dy") or 0)
         moved = bool(dx or dy)
-        explicit = bool(u.get("size_abs")) or abs(float(u.get("size_scale", 1.0)) - 1) > 1e-6
+        explicit = abs(float(u.get("size_delta", 0) or 0)) > 1e-6
         rect = fitz.Rect(x0 + dx, y0 + dy, x1 + dx, max(y1, min(limit, ymax)) + dy)
         ymax = page.rect.y1 - 6 if moved else ymax        # a paragraph you moved is no longer squeezed by what was below its old place
         a = u.get("align", "left")
         align = {"left": "right", "right": "left", "center": "center"}[a] if rtl else a
         if u.get("align_ov") in ("right", "left", "center", "justify"):      # an alignment you chose yourself
             align = u["align_ov"]
-        if u.get("size_abs"):
-            size = float(u["size_abs"])
-        else:
-            size = size0 * (1.04 if rtl else 1.0) * float(u.get("size_scale", 1.0))
+        size = max(3.0, size0 * (1.04 if rtl else 1.0) + float(u.get("size_delta", 0) or 0))
         color = u.get("tcolor") or _rgb(u.get("color", 0))
         fam = fams.get(u.get("font")) or dflt if tgt == "ar" else None
         weight = "bold" if u.get("bold") else "normal"

@@ -536,7 +536,7 @@ def set_text(d, uid, text):
     return tx.commit()
 
 
-STYLE_KEYS = ("font", "size", "tcolor", "hl", "dx", "dy", "align")
+STYLE_KEYS = ("font", "dsize", "tcolor", "hl", "dx", "dy", "align")
 
 
 def set_ustyle(d, uid, **kw):
@@ -553,7 +553,7 @@ def reset_ustyle(d, uid, keys=STYLE_KEYS):
     return tx.commit()
 
 
-PSTYLE_KEYS = ("font", "scale", "tcolor", "hl", "bg", "dx", "dy", "align")
+PSTYLE_KEYS = ("font", "dsize", "tcolor", "hl", "bg", "dx", "dy", "align")
 
 
 def set_pstyle(d, page, **kw):
@@ -602,7 +602,7 @@ def page_items(units, d, orig_page):
                 "ar": d["tr"].get(u["id"], ""),
                 "deleted": bool(d["deleted"].get(u["id"])), "def_size": round(u["size"], 1),
                 "def_color": "#%02x%02x%02x" % ((u.get("color", 0) >> 16) & 255, (u.get("color", 0) >> 8) & 255, u.get("color", 0) & 255),
-                "font": st.get("font", ""), "size": st.get("size", 0), "tcolor": st.get("tcolor", ""), "hl": st.get("hl", ""),
+                "font": st.get("font", ""), "size": st.get("dsize", 0), "tcolor": st.get("tcolor", ""), "hl": st.get("hl", ""),
                 "dx": st.get("dx", 0), "dy": st.get("dy", 0), "align": st.get("align", ""), "page_font": ps.get("font", "")}
 
     for x in [e for e in extras if not e.get("after")]:
@@ -632,10 +632,7 @@ def merged_units(units, d):
             v = us.get(src) or ps.get(src)
             if v:
                 c[dst] = v
-        if us.get("size"):
-            c["size_abs"] = us["size"]
-        elif ps.get("scale") and ps["scale"] != 100:
-            c["size_scale"] = ps["scale"] / 100.0
+        c["size_delta"] = float(us.get("dsize", 0) or 0) + float(ps.get("dsize", 0) or 0)     # points added to the natural size (0 = as is)
         if us.get("tcolor") or ps.get("tcolor"):
             c["tcolor"] = us.get("tcolor") or ps.get("tcolor")
         if us.get("hl") or ps.get("hl"):

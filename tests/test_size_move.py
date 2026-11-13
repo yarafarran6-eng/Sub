@@ -22,8 +22,8 @@ def sizes(us):
     page = fitz.open(out)[0]
     return [round(s["size"], 1) for b in page.get_text("dict")["blocks"] if b["type"] == 0 for l in b["lines"] for s in l["spans"]]
 base = sizes(units())
-big = sizes(units(size_scale=1.8))
-assert max(big) >= 17, (base, big)               # 10 * 1.04 * 1.8 = 18.7: the size you asked for is the size you get
+big = sizes(units(size_delta=8))
+assert max(big) >= 17, (base, big)               # 10.4 + 8 = 18.4: the size you asked for is the size you get
 moved = sizes(units(dy=60))
 assert min(moved) >= 10, moved                    # moved down over the second paragraph's gap: still full size
 print("SIZE/MOVE OK", base[:2], big[:2], moved[:2])

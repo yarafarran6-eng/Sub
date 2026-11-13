@@ -20,12 +20,12 @@ assert o[C["s0_g"]]["visible"] and not o[C["s9_g"]]["visible"]
 h_text.blur(*S, "الفصل الأول", 0)
 assert list(manual.load_draft(pid, did)["tr"].values()) == ["الفصل الأول"]
 uid = manual.page_items(manual.load(pid)[1], manual.load_draft(pid, did), 0)[1]["uid"]
-for kw in (dict(size=14), dict(size=16), dict(font="Amiri")):
+for kw in (dict(dsize=14), dict(dsize=16), dict(font="Amiri")):
     d = manual.load_draft(pid, did); manual.set_ustyle(d, uid, **kw); manual.save_draft(pid, d)
-o = panel.stepback(*S, "para", 2, "size", "q_"); assert manual.load_draft(pid, did)["ustyle"][uid] == {"size": 14, "font": "Amiri"}, manual.load_draft(pid, did)["ustyle"]
+o = panel.stepback(*S, "para", 2, "size", "q_"); assert manual.load_draft(pid, did)["ustyle"][uid] == {"dsize": 14, "font": "Amiri"}, manual.load_draft(pid, did)["ustyle"]
 o = panel.reset(*S, "para", 2, "size", "q_"); assert manual.load_draft(pid, did)["ustyle"][uid] == {"font": "Amiri"}
 o = panel.apply(*S, "page", 1, "Tajawal", 110, "center", True, "#222222", False, "#fff2a8", 3, 0, "gradient", "#ffffff", "#000000", "vertical")
-assert manual.load_draft(pid, did)["pstyle"]["0"]["scale"] == 110
+assert manual.load_draft(pid, did)["pstyle"]["0"]["dsize"] == 110
 panel.move(*S, "page", 1, "right", 5, "p_"); panel.preset(*S, "page", 1, "تدرج: ذهبي")
 # page replace with MY image: must change + must fit the page + preview must show it at once
 try: h_pages.insert(pid, did, "replace", 2, "/tmp/mine.jpg", 1, False, False); raise SystemExit("replace without confirmation must fail")
@@ -90,3 +90,11 @@ o = h_text.style_slot(*S, 1)
 assert v(o, "q_n") == 2 and o[C["q_acc"]]["open"] is True and C["q_font"] in o
 assert len(C) < 520, len(C)
 print("PANEL OK", len(C))
+
+# vertical shift: positive = UP in the box (stored the other way), size 0 = natural
+panel.apply(*S, "para", 2, "", 3, "", False, "#000000", False, "#fff2a8", 0, 5, "none", "#fff", "#ccc", "vertical")
+_d = manual.load_draft(pid, did); print(_d["ustyle"]); _u = [v for v in _d["ustyle"].values() if "dy" in v][0]
+assert _u["dy"] == -5 and _u["dsize"] == 3, _u
+_o = panel.values(_d, manual.page_items(manual.load(pid)[1], _d, 0)[1] if False else __import__("manual_ui.data", fromlist=["x"]).items_now(pid, did, 0, 0)[4], manual.effective_plan(_d)[0], "para", 2, "q_")
+assert _o[C["q_dy"]]["value"] == 5, _o[C["q_dy"]]
+print("SIGN OK")

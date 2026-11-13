@@ -21,15 +21,15 @@ def edit(fn):
 
 edit(lambda d: manual.set_text(d, p0[0], "ترجمة صفحة 1"))
 edit(lambda d: manual.set_text(d, p1[0], "ترجمة صفحة 2"))
-edit(lambda d: manual.set_ustyle(d, p0[0], size=30))
-edit(lambda d: manual.set_pstyle(d, 1, scale=120))
+edit(lambda d: manual.set_ustyle(d, p0[0], dsize=30))
+edit(lambda d: manual.set_pstyle(d, 1, dsize=120))
 edit(lambda d: manual.set_text(d, p1[0], "ترجمة صفحة 2 معدلة"))          # LAST change overall belongs to page 2 (index 1)
 
 # undo on page 1 (index 0): must undo ITS last change (the size), not the last change of the file
 h_files.undo_page(pid, did, 0, 0)
 d = manual.load_draft(pid, did)
 assert "size" not in d["ustyle"].get(p0[0], {}), d["ustyle"]
-assert d["tr"][p0[0]] == "ترجمة صفحة 1" and d["tr"][p1[0]] == "ترجمة صفحة 2 معدلة" and d["pstyle"]["1"]["scale"] == 120, "other page untouched"
+assert d["tr"][p0[0]] == "ترجمة صفحة 1" and d["tr"][p1[0]] == "ترجمة صفحة 2 معدلة" and d["pstyle"]["1"]["dsize"] == 120, "other page untouched"
 h_files.undo_page(pid, did, 0, 0)                                           # next: its translation goes
 assert manual.load_draft(pid, did)["tr"].get(p0[0], "") == ""
 h_files.undo_page(pid, did, 0, 0)                                           # nothing left on this page: a message, no change
@@ -46,5 +46,5 @@ assert not d["tr"].get(p1[0]) and "1" not in d["pstyle"] and not any(x["page"] =
 assert d["tr"][p0[0]] == "ما تتغير", "page 1 keeps its translation"
 h_files.undo(pid, did, 1, 0)                                                # one general undo brings the whole page back
 d = manual.load_draft(pid, did)
-assert d["tr"][p1[0]] == "ترجمة صفحة 2 معدلة" and d["pstyle"]["1"]["scale"] == 120
+assert d["tr"][p1[0]] == "ترجمة صفحة 2 معدلة" and d["pstyle"]["1"]["dsize"] == 120
 print("page undo OK")

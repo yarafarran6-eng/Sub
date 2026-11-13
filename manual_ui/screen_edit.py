@@ -20,7 +20,7 @@ def style_block(px, page):
         put(f"{px}font", gr.Dropdown(fonts(), value="", label="الخط والأسلوب", scale=4))
         _buttons(px, "font", "الخط")
     with gr.Row(elem_classes="grow"):
-        put(f"{px}size", gr.Number(100 if page else 0, label="النسبة % من الحجم الأصلي (100 = كما هو)" if page else "الحجم بالنقطة (0 = الأصلي)", scale=4))
+        put(f"{px}size", gr.Number(0, label="تكبير/تصغير الخط بالنقطة (0 = الحجم الأصلي، موجب يكبّر، سالب يصغّر)", scale=4))
         _buttons(px, "size", "حجم الخط")
     with gr.Row(elem_classes="grow"):
         put(f"{px}align", gr.Dropdown(ALIGN_CHOICES, value="", label="محاذاة النص", scale=4))
@@ -38,7 +38,7 @@ def style_block(px, page):
     with gr.Row(elem_classes="grow"):
         with gr.Row(scale=4):
             put(f"{px}dx", gr.Number(0, label="إزاحة أفقية (نقطة)"))
-            put(f"{px}dy", gr.Number(0, label="إزاحة رأسية (نقطة)"))
+            put(f"{px}dy", gr.Number(0, label="إزاحة رأسية (موجب = فوق، سالب = تحت)"))
             put(f"{px}step", gr.Number(5, label="خطوة السهم"))
         _buttons(px, "pos", "المكان")
     with gr.Row(elem_classes="arrows"):
