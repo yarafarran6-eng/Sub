@@ -261,9 +261,9 @@ def _apply_page(doc, pno, us, obstacles, tgt, default_family=None, bg=None, bedi
         if scratch is None:
             scratch = fitz.open()
             scratch.new_page(width=page.rect.width, height=page.rect.height)
-        if h0 < size0 * 1.9 and "\n" not in u["tr"] and not moved:        # it was one line: keep it one line, widen the box if needed
+        if h0 < size0 * 1.9 and "\n" not in u["tr"]:        # it was one line: keep it one line, widen the box if needed
             lo, hi = 8.0, W - 8.0
-            ob = fitz.Rect(x0, y0, x1, y1)
+            ob = fitz.Rect(x0 + dx, y0 + dy, x1 + dx, y1 + dy)
             cen = fitz.Point((ob.x0 + ob.x1) / 2, (ob.y0 + ob.y1) / 2)
             inside = [b for b in boxes if b.contains(cen)]
             if inside:                                     # sitting in a label box: stay inside it
@@ -271,7 +271,7 @@ def _apply_page(doc, pno, us, obstacles, tgt, default_family=None, bg=None, bedi
                 bx0, bx1 = (W - b.x1, W - b.x0) if rtl and u.get("align") != "center" else (b.x0, b.x1)
                 lo, hi = max(lo, bx0 + 2), min(hi, bx1 - 2)
             for v in obstacles:
-                if v is u or not v.get("bbox") or v["bbox"][3] < y0 + 1 or v["bbox"][1] > y1 - 1:
+                if v is u or not v.get("bbox") or v["bbox"][3] < y0 + dy + 1 or v["bbox"][1] > y1 + dy - 1:
                     continue
                 vx0, vx1 = v["bbox"][0], v["bbox"][2]
                 if rtl and u.get("align") != "center":
