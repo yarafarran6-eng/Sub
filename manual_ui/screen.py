@@ -117,6 +117,7 @@ def _wire(tabs):
     C["ctx"].blur(h_text.ai_cfg, [C["pid"], C["did"], C["ctx"], C["style"]], C["saved"])
     C["b_ctx"].click(h_text.ai_ctx, [C["pid"], C["did"]], C["ctx"])
 
+    P(C["b_imp"].click(lambda *a: h_text.import_text(*a[:5], *a[5:]), S + [C["imp_txt"]] + ARS, ALL))
     # ---- style blocks: the page one (px "p_") and ONE shared paragraph one (px "q_", paragraph number in q_n)
     CT = ("font", "size", "align", "tOn", "tc", "hOn", "hc", "dx", "dy")
     BG = [C[k] for k in ("bg_mode", "bg_c1", "bg_c2", "bg_dir")]

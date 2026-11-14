@@ -83,6 +83,10 @@ def build():
         put("b_todo", gr.Button("أقرب صفحة ناقصة", scale=1))
     put("info", gr.Markdown())
     put("note", gr.Markdown())
+    with gr.Accordion("📥 لصق ترجمة جاهزة (من محادثة Claude) توزَّع على فقرات الصفحة", open=False):
+        gr.HTML("<div class='mini'>اكتب كل فقرة بسطر يبدأ برقمها (نفس أرقام الفقرات اللي تحت): <b>1) النص</b>. وتقدر تلصق عدة صفحات مرة وحدة بفاصل «=== صفحة 5 ===» (رقم الصفحة في الكتاب الأصلي). بدون فاصل تنلصق في الصفحة اللي أنت فيها.</div>")
+        put("imp_txt", gr.Textbox(lines=8, max_lines=20, show_label=False, placeholder="=== صفحة 5 ===\n1) ...\n2) ...", rtl=True))
+        put("b_imp", gr.Button("ألصق الترجمة في الفقرات", variant="primary"))
     with gr.Accordion("🎨 تنسيق الصفحة كلها: خط، حجم، لون، تحديد، مكان، خلفية (اضغط السهم)", open=False):
         gr.HTML("<div class='mini'>يطبَّق على كل فقرات الصفحة. وتنسيق فقرة بعينها (تحت الفقرة) يغلب تنسيق الصفحة.</div>")
         style_block("p_", True)

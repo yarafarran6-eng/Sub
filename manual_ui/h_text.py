@@ -1,4 +1,5 @@
 """Navigation and the paragraphs: typing, autosave, AI translation, reading from the picture, adding / deleting paragraphs."""
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor
 import gradio as gr
@@ -73,6 +74,61 @@ def style_load(pid, did, cur, grp, n):
     from . import panel
     d, allit, e = panel._now(pid, did, cur, grp, panel.PARA, n)
     return panel.values(d, allit, e, panel.PARA, int(n or 1), "q_")
+
+
+_NUM = str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789")
+_HEAD = re.compile(r"^\s*[=\-#*\s]*(?:صفحة|الصفحة|page)\s*([0-9٠-٩]+)\s*[=\-#*\s]*$", re.I)
+_ITEM = re.compile(r"^\s*[\[(]?([0-9٠-٩]+)[\])]?\s*[\).:\-–،]\s*(.*)$")
+
+
+def parse_pasted(text):
+    """«=== صفحة 5 ===» lines (optional) and numbered paragraphs «1) ...» → {page or None: {number: text}}."""
+    out, page, num = {}, None, None
+    for ln in (text or "").splitlines():
+        h = _HEAD.match(ln)
+        if h:
+            page, num = int(h.group(1).translate(_NUM)), None
+            continue
+        m = _ITEM.match(ln)
+        if m:
+            num = int(m.group(1).translate(_NUM))
+            out.setdefault(page, {})[num] = m.group(2).strip()
+        elif ln.strip() and num is not None:
+            out[page][num] = (out[page][num] + " " + ln.strip()).strip()
+    return out
+
+
+@safe
+def import_text(pid, did, cur, grp, text, *ars):
+    """Puts a ready translation (numbered paragraphs, from a chat) into the paragraphs: each number = the paragraph with that number on the page."""
+    guard()
+    need(pid)
+    parsed = parse_pasted(text)
+    if not parsed:
+        raise gr.Error("ما لقيت فقرات مرقّمة. اكتب كل فقرة بسطر يبدأ برقمها مثل: 1) النص ... ويمكن تفصل الصفحات بسطر «=== صفحة 5 ===».", title="لصق ترجمة")
+    autosave(pid, did, cur, grp, ars)
+    done, missing = 0, []
+    with manual._lock:
+        meta, units, d = load_all(pid, did)
+        eff = manual.effective_plan(d)
+        from core.manual import Tx, MISSING
+        tx = Tx(d, "لصق ترجمة جاهزة")
+        for page, paras in parsed.items():
+            pos = int(cur) if page is None else next((i for i, e in enumerate(eff) if e["k"] == "o" and e["p"] == page - 1), None)
+            if pos is None:
+                missing.append(f"صفحة {page}")
+                continue
+            items = cur_items(units, d, eff, pos)[1]
+            for n, t in paras.items():
+                if 1 <= n <= len(items) and not items[n - 1]["deleted"] and t:
+                    tx.set("tr", items[n - 1]["uid"], value=t)
+                    done += 1
+                else:
+                    missing.append(f"فقرة {n}" + (f" بصفحة {page}" if page else ""))
+        tx.commit()
+        manual.save_draft(pid, d)
+    toast(f"✅ لصقت {done} فقرة." + (f" ما لقيت: {'، '.join(missing[:8])}" if missing else ""), warn=bool(missing))
+    return view(pid, did, cur, 0)
 
 
 @safe

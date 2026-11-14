@@ -98,3 +98,11 @@ assert _u["dy"] == -5 and _u["dsize"] == 3, _u
 _o = panel.values(_d, manual.page_items(manual.load(pid)[1], _d, 0)[1] if False else __import__("manual_ui.data", fromlist=["x"]).items_now(pid, did, 0, 0)[4], manual.effective_plan(_d)[0], "para", 2, "q_")
 assert _o[C["q_dy"]]["value"] == 5, _o[C["q_dy"]]
 print("SIGN OK")
+
+# paste a ready translation: numbered paragraphs, optional page headers
+from manual_ui import h_text as _ht
+assert _ht.parse_pasted("=== صفحة 2 ===\n1) أ\nتكملة\n٢. ب") == {2: {1: "أ تكملة", 2: "ب"}}
+_o = _ht.import_text(*S[:4], "1) مرحبا بالعالم\n2) هذا اختبار", *[None] * 30)
+_d = manual.load_draft(pid, did); _vals = list(_d["tr"].values())
+assert "مرحبا بالعالم" in _vals and "هذا اختبار" in _vals, _vals
+print("IMPORT OK")
