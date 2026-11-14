@@ -20,6 +20,8 @@ if errorlevel 1 (
   exit /b 1
 )
 python -m pip install -r requirements.txt
+rem optional offline text reader (no AI): if it cannot be installed the site still works
+python -c "import rapidocr_onnxruntime" >nul 2>&1 || python -m pip install rapidocr-onnxruntime
 set HOST=0.0.0.0
 set OPEN_BROWSER=1
 python app.py

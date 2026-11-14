@@ -2,6 +2,7 @@
 import time
 from concurrent.futures import ThreadPoolExecutor
 import gradio as gr
+from core import ocr_local
 from core import builder, editor, manual, manual_ai, priority
 from core.pool import NoKeys
 from ui.common import guard, safe, toast
@@ -189,7 +190,12 @@ def _ocr_items(pid, did, items):
     def one(it):
         u = by[it["uid"]]
         mask = [v["bbox"] for v in units if v is not u and v.get("page") == u["page"] and v.get("bbox")]
-        return it["uid"], manual_ai.read_image(builder.crop_png(src, u["page"], u["bbox"], mask=mask), hint)
+        png = builder.crop_png(src, u["page"], u["bbox"], mask=mask)
+        if ocr_local.available():                                   # first the local reader: no AI, no invented words
+            txt = ocr_local.read_image(png)
+            if txt:
+                return it["uid"], txt
+        return it["uid"], manual_ai.read_image(png, hint)          # nothing installed / nothing recognised: the AI
     try:
         with ThreadPoolExecutor(4) as ex:
             results = list(ex.map(one, [i for i in items if i["uid"] in by]))
