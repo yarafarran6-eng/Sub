@@ -82,10 +82,12 @@ def read_image(png_bytes):
     """Text of the picture, or "" when nothing was recognised. Raises RuntimeError when no engine is installed at all."""
     if not available():
         raise RuntimeError("لا يوجد قارئ نصوص محلي: نصّب RapidOCR (pip install rapidocr-onnxruntime) أو Tesseract.")
+    tess = _tess_langs()[0] is not None
     text = _by_rapid(png_bytes)
     latin = sum(c.isascii() and c.isalpha() for c in text)
-    if _tess_langs()[0] and (not text or latin < max(3, len(text) // 3)):      # not English: Arabic/Japanese/Korean need Tesseract
-        t2 = _by_tess(png_bytes)
-        if len(t2) > len(text) * 0.6:
+    cjk = len(_CJK.findall(text))
+    if tess and cjk < max(2, len(text) // 4):          # English or something RapidOCR cannot read: Tesseract is the steadier reader
+        t2 = _by_tess(png_bytes, ["eng"] if latin >= max(3, len(text) // 3) else None)
+        if t2 and (not text or len(t2) > len(text) * 0.6):
             text = t2
     return text.strip()
