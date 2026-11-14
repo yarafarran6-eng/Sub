@@ -99,13 +99,21 @@ def parse_pasted(text):
 
 
 @safe
-def import_text(pid, did, cur, grp, text, *ars):
+def import_text(pid, did, cur, grp, mode, text, *ars):
     """Puts a ready translation (numbered paragraphs, from a chat) into the paragraphs: each number = the paragraph with that number on the page."""
     guard()
     need(pid)
     parsed = parse_pasted(text)
     if not parsed:
         raise gr.Error("ما لقيت فقرات مرقّمة. اكتب كل فقرة بسطر يبدأ برقمها مثل: 1) النص ... ويمكن تفصل الصفحات بسطر «=== صفحة 5 ===».", title="لصق ترجمة")
+    if mode == "blank":                       # no link with the file: the paragraphs go to a NEW white page after this one
+        paras = [t for page in parsed.values() for _, t in sorted(page.items()) if t]
+        with manual._lock:
+            d = manual.load_draft(pid, did)
+            manual.plan_insert(d, int(cur), {"k": "t", "paras": paras}, "after")
+            manual.save_draft(pid, d)
+        toast(f"✅ أضفت صفحة بيضاء بعد هذي الصفحة فيها {len(paras)} فقرة.")
+        return view(pid, did, int(cur) + 1, 0)
     autosave(pid, did, cur, grp, ars)
     done, missing = 0, []
     with manual._lock:

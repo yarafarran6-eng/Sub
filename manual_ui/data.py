@@ -16,6 +16,8 @@ def path_of(f):
 def label(e):
     if e["k"] == "o":
         return f"صفحة أصلية {e['p'] + 1}"
+    if e["k"] == "t":
+        return "صفحة نصية (ترجمة ملصوقة)"
     return "مستوردة: " + e.get("label", "") if e["k"] == "e" else "صفحة فارغة"
 
 

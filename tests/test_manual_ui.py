@@ -102,7 +102,15 @@ print("SIGN OK")
 # paste a ready translation: numbered paragraphs, optional page headers
 from manual_ui import h_text as _ht
 assert _ht.parse_pasted("=== صفحة 2 ===\n1) أ\nتكملة\n٢. ب") == {2: {1: "أ تكملة", 2: "ب"}}
-_o = _ht.import_text(*S[:4], "1) مرحبا بالعالم\n2) هذا اختبار", *[None] * 30)
+_o = _ht.import_text(*S[:4], "file", "1) مرحبا بالعالم\n2) هذا اختبار", *[None] * 30)
 _d = manual.load_draft(pid, did); _vals = list(_d["tr"].values())
 assert "مرحبا بالعالم" in _vals and "هذا اختبار" in _vals, _vals
 print("IMPORT OK")
+
+_n0 = len(manual.effective_plan(manual.load_draft(pid, did)))
+_ht.import_text(*S[:4], "blank", "1) أول\n2) ثاني", *[None] * 30)
+_e = manual.effective_plan(manual.load_draft(pid, did)); assert len(_e) == _n0 + 1 and any(x["k"] == "t" for x in _e)
+_tp = [i for i, x in enumerate(_e) if x["k"] == "t"][0]
+_png, _, _txt = __import__("manual_ui.h_output", fromlist=["x"]).preview_png(pid, did, _tp)
+import fitz as _f; _pm = _f.Pixmap(_png); assert _pm.width > 100 and "نصية" in _txt, _txt
+print("BLANK OK")

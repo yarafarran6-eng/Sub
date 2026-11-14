@@ -509,6 +509,21 @@ def build_plan_pdf(src_pdf, entries, units, tgt, out_path=None, font=None, page_
             ex = fitz.open(str(_P(base_dir) / e["f"]))
             out.insert_pdf(ex, from_page=0, to_page=0)
             last_size = (out[-1].rect.width, out[-1].rect.height)
+        elif e["k"] == "t":                      # a white page that only carries a pasted translation (paragraphs flow onto more pages if needed)
+            W, H = last_size
+            size, pg, y, cur_u = 13, None, 50, []
+            for tx in (e.get("paras") or [""]):
+                cpl = max(10, int((W - 100) / (size * 0.55)))
+                h = sum(-(-max(len(l), 1) // cpl) for l in tx.split("\n")) * size * 1.9 + 4
+                if pg is None or (y + h > H - 50 and y > 50):
+                    if pg is not None:
+                        todo.append((len(out) - 1, f"T{pos}_{len(out)}")); by_page[f"T{pos}_{len(out)}"] = all_on_page[f"T{pos}_{len(out)}"] = cur_u
+                    out.new_page(width=W, height=H); pg, y, cur_u = len(out) - 1, 50, []
+                cur_u.append({"id": f"T{pos}_{len(cur_u)}_{pg}", "page": f"T{pos}", "kind": "text", "translate": True, "custom": True, "bbox": [50, y, W - 50, y + h],
+                              "text": "", "size": size, "color": 0, "align": "left", "tr": tx})
+                y += h + 10
+            key = f"T{pos}_{len(out)}"
+            todo.append((len(out) - 1, key)); by_page[key] = all_on_page[key] = cur_u
         else:
             out.new_page(width=last_size[0], height=last_size[1])
     shrunk = 0
