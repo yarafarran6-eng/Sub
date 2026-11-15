@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 import gradio as gr
 from core import auth, jobs, launch, monitor
+from core.version import BUILD
 from manual_ui import screen as manual_screen
 from manual_ui.consts import DROP_JS, PASTE_JS
 from ui import tab_chat, tab_keys, tab_review, tab_settings, tab_translate
@@ -73,7 +74,7 @@ if __name__ == "__main__":
     jobs.recover()
     _patient_localhost_check()
     kw = dict(server_name=os.getenv("HOST") or ("0.0.0.0" if os.getenv("SPACE_ID") else "127.0.0.1"),
-              server_port=int(os.getenv("PORT", "7860")), auth=auth.check, css=CSS, js=JS, max_file_size="200mb", show_error=True,
+              server_port=int(os.getenv("PORT", "7860")), auth=auth.check, auth_message=f"🏷 نسخة الموقع: {BUILD}", css=CSS, js=JS, max_file_size="200mb", show_error=True,
               favicon_path=str(Path(__file__).parent / "assets" / "logo.ico"))
     try:
         demo.queue(default_concurrency_limit=8).launch(theme=THEME, **kw)
