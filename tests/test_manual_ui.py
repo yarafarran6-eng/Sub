@@ -121,3 +121,6 @@ assert _ht.load_txt(_f.name).strip().endswith("مرحبا")
 _f2 = _tf.NamedTemporaryFile("wb", suffix=".txt", delete=False); _f2.write("1) مرحبا".encode("cp1256")); _f2.close()
 assert _ht.read_txt(_f2.name) == "1) مرحبا"
 print("TXT OK")
+
+assert _ht.parse_pasted("=== صفحة 3 ===\n1) (لا يوجد نص)") == {3: {1: ""}}
+print("NOTEXT OK")

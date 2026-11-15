@@ -92,7 +92,7 @@ def parse_pasted(text):
         m = _ITEM.match(ln)
         if m:
             num = int(m.group(1).translate(_NUM))
-            out.setdefault(page, {})[num] = m.group(2).strip()
+            out.setdefault(page, {})[num] = "" if "لا يوجد نص" in m.group(2) and len(m.group(2)) < 20 else m.group(2).strip()
         elif ln.strip() and num is not None:
             out[page][num] = (out[page][num] + " " + ln.strip()).strip()
     return out
