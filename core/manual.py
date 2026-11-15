@@ -557,7 +557,14 @@ def replace_page_text(d, units, orig_page, paras, obstacles=()):
         if x["page"] == orig_page:
             tx.set("extra", xid, value=MISSING)
             tx.set("tr", xid, value=MISSING)
+    bands, top = [], y0 - 2                                   # the band to wipe (stray bits of old text), with the page's pictures cut out of it
+    for o in obs:
+        if o[1] - 1 > top:
+            bands.append([0, top, 9999, o[1] - 1])
+        top = max(top, o[3] + 1)
+    bands.append([0, top, 9999, y1 + 36])
     y = y0
+    first = True
     for t, h in zip(paras, need):
         xid = "X_" + uuid.uuid4().hex[:5]
         h = max(h * k, size * 1.2)
@@ -565,7 +572,9 @@ def replace_page_text(d, units, orig_page, paras, obstacles=()):
             if y < o[3] and y + h > o[1]:
                 y = o[3] + gap
         tx.set("extra", xid, value={"id": xid, "kind": "text", "translate": True, "custom": True, "page": orig_page, "after": "", "bbox": [x0, y, x1, y + h],
-                                    "text": "", "size": size, "bold": False, "color": 0, "align": "left"})
+                                    "text": "", "size": size, "bold": False, "color": 0, "align": "left", "repl": True,
+                                    **({"erase": bands} if first else {})})
+        first = False
         tx.set("tr", xid, value=t)
         y += h + gap
     tx.commit()
@@ -672,8 +681,11 @@ def page_items(units, d, orig_page):
 
     for x in [e for e in extras if not e.get("after")]:
         items.append(view(x))
+    replaced = any(e.get("repl") for e in extras)          # a page whose text was replaced: its old cut-up fragments are not listed any more
     for u in units:
         if u["page"] == orig_page and u.get("translate"):
+            if replaced and d["deleted"].get(u["id"]):
+                continue
             items.append(view(u))
             for x in [e for e in extras if e.get("after") == u["id"]]:
                 items.append(view(x))

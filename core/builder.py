@@ -202,6 +202,11 @@ def _apply_page(doc, pno, us, obstacles, tgt, default_family=None, bg=None, bedi
     dflt = fams.get(default_family or DEFAULT_FAMILY) or fams.get(DEFAULT_FAMILY) or ("NotoNaskhArabic-Regular.ttf", "NotoNaskhArabic-Bold.ttf")
     boxes = [r for r, _ in pboxes]            # label boxes of the ORIGINAL page (before anything is erased)
     for u in us:
+        if u.get("erase"):                    # a replaced page: also the bits of old text no paragraph covered
+            for eb in u["erase"]:
+                er = fitz.Rect(eb) & page.rect
+                if er.height > 1:
+                    page.add_redact_annot(er, fill=False if has_bg else _bg(page, er))
         if u.get("custom"):                   # an added paragraph has no original text to erase
             continue
         r = fitz.Rect(u["bbox"])

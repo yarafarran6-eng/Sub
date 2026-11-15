@@ -88,7 +88,7 @@ def view(pid, did, pos, grp, msg=""):
             out.update(R(**{f"s{i}_g": u(visible=False)}))
             continue
         it, gi = items[i], grp * SLOTS + i + 1
-        shown = "(فقرة أضفتها أنت، لا يوجد نص أصلي)" if it["custom"] else (GARBLED_MSG if it["garbled"] else it["en"])
+        shown = "✍️ نص ملصوق من ملفك (ما له نص أصلي)" if it["custom"] else (GARBLED_MSG if it["garbled"] else it["en"])
         out.update(R(**{
             f"s{i}_g": u(visible=True), f"s{i}_head": f"<b>الفقرة {gi}</b> <span class='mini'>· حجم الخط الأصلي {it['def_size']}"
                                                   + (" · مقروءة من الصورة" if it["has_src"] else "") + (" · 🗑 ستُحذف من الملف النهائي" if it["deleted"] else "") + "</span>",
