@@ -507,7 +507,7 @@ def new_extra(d, units, orig_page, after_uid=""):
     return xid
 
 
-def _wrapped_lines(text, size, width, family=None):
+def _wrapped_lines(text, size, width, family=None, indent=0.0):
     """How many lines the text takes in a column of this width: words are measured with the real font (the same one the page is drawn with)."""
     try:
         import fitz
@@ -517,10 +517,11 @@ def _wrapped_lines(text, size, width, family=None):
         space = font.text_length(" ", fontsize=size)
         n = 0
         for para_line in text.split("\n"):
-            cur, lines = 0.0, 1
+            cur, lines, first = 0.0, 1, True
             for w in para_line.split():
                 wl = font.text_length(w, fontsize=size)
-                if cur and cur + space + wl > width * 1.08:
+                room = width - (indent if first and lines == 1 else 0)
+                if cur and cur + space + wl > room:
                     lines, cur = lines + 1, wl
                 else:
                     cur += (space if cur else 0) + wl
@@ -531,25 +532,43 @@ def _wrapped_lines(text, size, width, family=None):
         return sum(-(-max(len(l), 1) // cpl) for l in text.split("\n"))
 
 
-def replace_page_text(d, units, orig_page, paras, obstacles=()):
-    """Clean text for a WHOLE page: every original paragraph of the page is erased and the new paragraphs flow top to bottom in the page's own
-    text column, at the page's own font size (for files whose text is cut into lines/fragments, so the numbers cannot match)."""
+def replace_page_text(d, units, orig_page, paras, obstacles=(), font=""):
+    """Clean text for a WHOLE page (for files whose text is cut into lines/fragments, so numbered paste cannot match): every original paragraph
+    of the page is erased and the new paragraphs flow top to bottom in the page's own text column, with the page's own look: the same
+    font/size, the same line spacing, the first-line indent, justified, and the chapter heading centred at its own size."""
+    import statistics
     pu = [u for u in units if u["page"] == orig_page and u.get("translate")]
     if not pu:
         return 0
     longs = [u for u in pu if len(u["text"]) > 100] or pu
+    body = statistics.median(u["size"] for u in longs)
+    heads = sorted([u for u in pu if u["size"] > body * 1.25], key=lambda u: u["bbox"][1])       # the chapter heading (bigger type)
+    rest = [u for u in pu if u not in heads]
+    longs = [u for u in rest if len(u["text"]) > 100] or rest or pu
     x0 = min(u["bbox"][0] for u in longs)
     x1 = max(u["bbox"][2] for u in longs)
-    y0 = min(u["bbox"][1] for u in pu)
+    y0 = min(u["bbox"][1] for u in (rest or pu))
     y1 = max(u["bbox"][3] for u in pu)
-    size = sorted(u["size"] for u in longs)[len(longs) // 2]
-    line = size * 1.75
+    size = statistics.median(u["size"] for u in longs)
+    pitch = statistics.median(u["bbox"][3] - u["bbox"][1] for u in longs)
+    pitch = pitch if size * 1.3 < pitch < size * 2.4 else size * 1.75                 # the book's own line spacing
+    drawn = size * 1.04                                                              # the size the builder really draws right-to-left text at
+    lh = pitch / drawn
+    short = [x1 - u["bbox"][2] for u in rest if 8 < x1 - u["bbox"][2] < 45 and u["size"] < body * 1.25 and len(u["text"]) > 30]
+    indent = round(statistics.median(short), 1) if len(short) >= 2 else 0.0                       # the first line of a paragraph starts indented
     paras = [t for t in paras if t]
-    need = [_wrapped_lines(t, size, x1 - x0, d.get("font")) * line for t in paras]
-    gap = size * 0.35
+    hp = []                                                                          # the leading short paragraphs are the heading
+    if heads:
+        lines_n = len({round(u["bbox"][1] / 10) for u in heads})
+        while paras and len(hp) < 3 and len(paras[len(hp)]) <= 45:
+            hp.append(paras[len(hp)])
+        paras = paras[len(hp):]
+        if lines_n == 1 and hp:
+            hp = [" ".join(hp)]
     obs = sorted([o for o in obstacles if o[3] > y0 and o[1] < y1 and (o[2] - o[0]) > 20], key=lambda o: o[1])
-    room = (y1 - y0) - sum(min(o[3], y1) - max(o[1], y0) + gap * 2 for o in obs)       # the height left once the page's pictures/ornaments are left alone
-    k = min(1.0, (room - gap * len(paras)) / max(sum(need), 1))      # not enough room: the boxes shrink and the text is fitted into them
+    need = [_wrapped_lines(t, drawn, x1 - x0, font, indent) * pitch for t in paras]
+    room = (y1 - y0) - sum(min(o[3], y1) - max(o[1], y0) for o in obs)           # the height left once the page's pictures/ornaments are left alone
+    k = min(1.0, room / max(sum(need), 1))                                           # not enough room: the spacing tightens a little
     tx = Tx(d, "لصق نص الصفحة كاملة")
     for u in pu:
         tx.set("deleted", u["id"], value=True)
@@ -557,28 +576,46 @@ def replace_page_text(d, units, orig_page, paras, obstacles=()):
         if x["page"] == orig_page:
             tx.set("extra", xid, value=MISSING)
             tx.set("tr", xid, value=MISSING)
-    bands, top = [], y0 - 2                                   # the band to wipe (stray bits of old text), with the page's pictures cut out of it
-    for o in obs:
+    bands, top = [], min(u["bbox"][1] for u in pu) - 2        # the band to wipe (stray bits of old text), with the page's pictures cut out of it
+    for o in sorted([o for o in obstacles if (o[2] - o[0]) > 20], key=lambda o: o[1]):
+        if o[3] < top:
+            continue
         if o[1] - 1 > top:
             bands.append([0, top, 9999, o[1] - 1])
         top = max(top, o[3] + 1)
     bands.append([0, top, 9999, y1 + 36])
-    y = y0
+    lead_bold = bool(rest) and bool(sorted(rest, key=lambda u: u['bbox'][1])[0].get('bold'))
     first = True
-    for t, h in zip(paras, need):
+
+    def add(t, box, **kw):
+        nonlocal first
         xid = "X_" + uuid.uuid4().hex[:5]
-        h = max(h * k, size * 1.2)
+        ex = {"id": xid, "kind": "text", "translate": True, "custom": True, "page": orig_page, "after": "", "bbox": box, "text": "",
+              "size": kw.pop("size", size), "bold": False, "color": 0, "align": "left", "repl": True}
+        if font:
+            ex["font"] = font
+        if first:
+            ex["erase"], first = bands, False
+        ex.update(kw)
+        tx.set("extra", xid, value=ex)
+        tx.set("tr", xid, value=t)
+
+    if hp:                                                    # the heading: the same place, size and weight as the original, centred
+        hs = statistics.median(u["size"] for u in heads)
+        hy0, hy1 = min(u["bbox"][1] for u in heads), max(u["bbox"][3] for u in heads)
+        step = (hy1 - hy0) / len(hp)
+        for i, t in enumerate(hp):
+            add(t, [x0, hy0 + i * step, x1, hy0 + (i + 1) * step], size=hs, bold=True, align="center", align_ov="center")
+    y = y0
+    for i, (t, h) in enumerate(zip(paras, need)):
+        h = h * k
         for o in obs:                                          # never on top of a picture / ornament that stays on the page
             if y < o[3] and y + h > o[1]:
-                y = o[3] + gap
-        tx.set("extra", xid, value={"id": xid, "kind": "text", "translate": True, "custom": True, "page": orig_page, "after": "", "bbox": [x0, y, x1, y + h],
-                                    "text": "", "size": size, "bold": False, "color": 0, "align": "left", "repl": True,
-                                    **({"erase": bands} if first else {})})
-        first = False
-        tx.set("tr", xid, value=t)
-        y += h + gap
+                y = o[3] + 2
+        add(t, [x0, y, x1, y + h], align_ov="justify", lh=round(lh, 3), indent=indent, **({"bold": True} if i == 0 and lead_bold and len(t) <= 120 else {}))
+        y += h
     tx.commit()
-    return len(paras)
+    return len(paras) + len(hp)
 
 
 def delete_extra(d, xid):

@@ -259,7 +259,8 @@ def _apply_page(doc, pno, us, obstacles, tgt, default_family=None, bg=None, bedi
             faces, family = "", "sans-serif"
             body = "<p style='margin:0'>" + html.escape(u["tr"]).replace("\n", "<br>") + "</p>"
         css = (faces + f"body{{font-family:{family};font-size:{size}pt;color:{color};text-align:{align};"
-               f"direction:{'rtl' if rtl else 'ltr'};margin:0;font-weight:{weight};line-height:1.3;}}")
+               f"direction:{'rtl' if rtl else 'ltr'};margin:0;font-weight:{weight};line-height:{float(u.get("lh") or 1.3)};"
+               f"text-indent:{float(u.get('indent') or 0)}pt;}}")
         if scratch is None:
             scratch = fitz.open()
             scratch.new_page(width=page.rect.width, height=page.rect.height)

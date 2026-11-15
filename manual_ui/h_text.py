@@ -137,6 +137,22 @@ def _page_obstacles(pid, p):
         return []
 
 
+def _page_font(pid, p):
+    """The page's own font, when it is one of the fonts the site has (the book here is set in Amiri)."""
+    try:
+        import fitz
+        from core import builder
+        names = {k.replace(" ", "").lower(): k for k in builder.font_families()}
+        with fitz.open(manual.source_path(pid)) as doc:
+            for f in doc[p].get_fonts():
+                base = f[3].split("+")[-1].split("-")[0].replace(" ", "").lower()
+                if base in names:
+                    return names[base]
+    except Exception:
+        pass
+    return ""
+
+
 def apply_parsed(pid, did, cur, parsed, label, how="file"):
     """Writes parsed {page or None: {number: text}} into the paragraphs in ONE undo step. -> (paragraphs written, what was not found, pages touched)."""
     done, missing, touched = 0, [], set()
@@ -152,7 +168,7 @@ def apply_parsed(pid, did, cur, parsed, label, how="file"):
                 continue
             if how == "page":                                  # the whole page's text is replaced and laid out again
                 e = eff[pos]
-                k = manual.replace_page_text(d, units, e["p"], [t for _, t in sorted(paras.items())], _page_obstacles(pid, e["p"])) if e["k"] == "o" else 0
+                k = manual.replace_page_text(d, units, e["p"], [t for _, t in sorted(paras.items())], _page_obstacles(pid, e["p"]), _page_font(pid, e["p"])) if e["k"] == "o" else 0
                 if k:
                     done += k
                     touched.add(pos)
