@@ -1,6 +1,6 @@
 """The manual translation screen: a bar that is always visible, four tabs, and the wiring of every button."""
 import gradio as gr
-from . import h_boxes, h_files, h_output, h_pages, h_text, panel, screen_edit, screen_export, screen_file, screen_pages
+from . import h_boxes, h_files, h_output, h_pages, h_text, panel, screen_edit, screen_export, screen_file, screen_pages, screen_paste
 from .consts import SLOTS
 from .reg import C, R, put
 from .view import file_choices, view
@@ -36,6 +36,8 @@ def build():
             screen_pages.build()
         with gr.Tab("٤. الملف النهائي", id="export"):
             screen_export.build()
+        with gr.Tab("٥. لصق ترجمة جاهزة", id="paste"):
+            screen_paste.build()
     _wire(tabs)
     def refresh():
         from core import priority
@@ -117,6 +119,9 @@ def _wire(tabs):
     C["ctx"].blur(h_text.ai_cfg, [C["pid"], C["did"], C["ctx"], C["style"]], C["saved"])
     C["b_ctx"].click(h_text.ai_ctx, [C["pid"], C["did"]], C["ctx"])
 
+    C["ib_kind"].change(lambda k: gr.update(visible=(k == "range")), C["ib_kind"], C["ib_rng"])
+    C["ib_up"].upload(h_text.load_txt, C["ib_up"], C["ib_txt"])
+    P(C["b_ib"].click(h_text.import_book, S + [C["ib_kind"], C["ib_a"], C["ib_b"], C["ib_txt"]], ALL))
     C["imp_up"].upload(h_text.load_txt, C["imp_up"], C["imp_txt"])
     P(C["b_imp"].click(lambda *a: h_text.import_text(*a[:6], *a[6:]), S + [C["imp_mode"], C["imp_txt"]] + ARS, ALL))
     # ---- style blocks: the page one (px "p_") and ONE shared paragraph one (px "q_", paragraph number in q_n)

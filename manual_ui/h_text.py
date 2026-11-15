@@ -127,6 +127,59 @@ def load_txt(file):
     return text
 
 
+def apply_parsed(pid, did, cur, parsed, label):
+    """Writes parsed {page or None: {number: text}} into the paragraphs in ONE undo step. -> (paragraphs written, what was not found, pages touched)."""
+    done, missing, touched = 0, [], set()
+    with manual._lock:
+        meta, units, d = load_all(pid, did)
+        eff = manual.effective_plan(d)
+        from core.manual import Tx
+        tx = Tx(d, label)
+        for page, paras in parsed.items():
+            pos = int(cur) if page is None else next((i for i, e in enumerate(eff) if e["k"] == "o" and e["p"] == page - 1), None)
+            if pos is None:
+                missing.append(f"صفحة {page}")
+                continue
+            items = cur_items(units, d, eff, pos)[1]
+            for n, t in paras.items():
+                if 1 <= n <= len(items) and not items[n - 1]["deleted"] and t:
+                    tx.set("tr", items[n - 1]["uid"], value=t)
+                    done += 1
+                    touched.add(pos)
+                elif t:
+                    missing.append(f"فقرة {n}" + (f" بصفحة {page}" if page else ""))
+        tx.commit()
+        manual.save_draft(pid, d)
+    return done, missing, touched
+
+
+@safe
+def import_book(pid, did, cur, grp, kind, a, b, text):
+    """Tab «لصق ترجمة جاهزة»: the whole file's translation (pages marked «=== صفحة N ===»), or only pages a..b of it."""
+    guard()
+    need(pid)
+    parsed = parse_pasted(text)
+    if not parsed:
+        raise gr.Error("ما لقيت فقرات مرقّمة. كل فقرة بسطر يبدأ برقمها: 1) النص", title="لصق ترجمة")
+    if None in parsed:
+        raise gr.Error("لازم تفصل الصفحات بسطر مثل «=== صفحة 5 ===» قبل فقراتها، عشان أعرف أي صفحة تروح لها كل فقرة.", title="ما فيه أرقام صفحات")
+    skipped = 0
+    if kind == "range":
+        lo, hi = sorted((int(a or 1), int(b or 1)))
+        skipped = sum(1 for k in parsed if not lo <= k <= hi)
+        parsed = {k: v for k, v in parsed.items() if lo <= k <= hi}
+        if not parsed:
+            raise gr.Error(f"ما فيه في النص أي صفحة بين {lo} و{hi}.", title="النطاق فاضي")
+    done, missing, touched = apply_parsed(pid, did, cur, parsed, "لصق ترجمة جاهزة")
+    msg = f"✅ لصقت **{done}** فقرة في **{len(touched)}** صفحة." + (f" (تجاهلت {skipped} صفحة خارج النطاق)" if skipped else "")
+    if missing:
+        msg += "\n\n⚠ ما لقيت مكان لـ: " + "، ".join(missing[:30]) + (" …" if len(missing) > 30 else "")
+    toast(f"✅ لصقت {done} فقرة في {len(touched)} صفحة.", warn=False)
+    out = view(pid, did, cur, 0)
+    out.update(R(ib_msg=msg))
+    return out
+
+
 @safe
 def import_text(pid, did, cur, grp, mode, text, *ars):
     """Puts a ready translation (numbered paragraphs, from a chat) into the paragraphs: each number = the paragraph with that number on the page."""
@@ -144,26 +197,7 @@ def import_text(pid, did, cur, grp, mode, text, *ars):
         toast(f"✅ أضفت صفحة بيضاء بعد هذي الصفحة فيها {len(paras)} فقرة.")
         return view(pid, did, int(cur) + 1, 0)
     autosave(pid, did, cur, grp, ars)
-    done, missing = 0, []
-    with manual._lock:
-        meta, units, d = load_all(pid, did)
-        eff = manual.effective_plan(d)
-        from core.manual import Tx, MISSING
-        tx = Tx(d, "لصق ترجمة جاهزة")
-        for page, paras in parsed.items():
-            pos = int(cur) if page is None else next((i for i, e in enumerate(eff) if e["k"] == "o" and e["p"] == page - 1), None)
-            if pos is None:
-                missing.append(f"صفحة {page}")
-                continue
-            items = cur_items(units, d, eff, pos)[1]
-            for n, t in paras.items():
-                if 1 <= n <= len(items) and not items[n - 1]["deleted"] and t:
-                    tx.set("tr", items[n - 1]["uid"], value=t)
-                    done += 1
-                else:
-                    missing.append(f"فقرة {n}" + (f" بصفحة {page}" if page else ""))
-        tx.commit()
-        manual.save_draft(pid, d)
+    done, missing, _ = apply_parsed(pid, did, cur, parsed, "لصق ترجمة جاهزة")
     toast(f"✅ لصقت {done} فقرة." + (f" ما لقيت: {'، '.join(missing[:8])}" if missing else ""), warn=bool(missing))
     return view(pid, did, cur, 0)
 
