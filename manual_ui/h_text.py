@@ -127,7 +127,17 @@ def load_txt(file):
     return text
 
 
-def apply_parsed(pid, did, cur, parsed, label):
+def _page_obstacles(pid, p):
+    """Pictures/ornaments of the original page (they stay), so pasted text is laid around them."""
+    try:
+        import fitz
+        with fitz.open(manual.source_path(pid)) as doc:
+            return [tuple(i["bbox"]) for i in doc[p].get_image_info()]
+    except Exception:
+        return []
+
+
+def apply_parsed(pid, did, cur, parsed, label, how="file"):
     """Writes parsed {page or None: {number: text}} into the paragraphs in ONE undo step. -> (paragraphs written, what was not found, pages touched)."""
     done, missing, touched = 0, [], set()
     with manual._lock:
@@ -139,6 +149,15 @@ def apply_parsed(pid, did, cur, parsed, label):
             pos = int(cur) if page is None else next((i for i, e in enumerate(eff) if e["k"] == "o" and e["p"] == page - 1), None)
             if pos is None:
                 missing.append(f"صفحة {page}")
+                continue
+            if how == "page":                                  # the whole page's text is replaced and laid out again
+                e = eff[pos]
+                k = manual.replace_page_text(d, units, e["p"], [t for _, t in sorted(paras.items())], _page_obstacles(pid, e["p"])) if e["k"] == "o" else 0
+                if k:
+                    done += k
+                    touched.add(pos)
+                else:
+                    missing.append(f"صفحة {page or pos + 1} (ما فيها نص أصلي)")
                 continue
             items = cur_items(units, d, eff, pos)[1]
             for n, t in paras.items():
@@ -154,7 +173,7 @@ def apply_parsed(pid, did, cur, parsed, label):
 
 
 @safe
-def import_book(pid, did, cur, grp, kind, a, b, text):
+def import_book(pid, did, cur, grp, kind, a, b, how, text):
     """Tab «لصق ترجمة جاهزة»: the whole file's translation (pages marked «=== صفحة N ===»), or only pages a..b of it."""
     guard()
     need(pid)
@@ -170,7 +189,7 @@ def import_book(pid, did, cur, grp, kind, a, b, text):
         parsed = {k: v for k, v in parsed.items() if lo <= k <= hi}
         if not parsed:
             raise gr.Error(f"ما فيه في النص أي صفحة بين {lo} و{hi}.", title="النطاق فاضي")
-    done, missing, touched = apply_parsed(pid, did, cur, parsed, "لصق ترجمة جاهزة")
+    done, missing, touched = apply_parsed(pid, did, cur, parsed, "لصق ترجمة جاهزة", "page" if how == "page" else "file")
     msg = f"✅ لصقت **{done}** فقرة في **{len(touched)}** صفحة." + (f" (تجاهلت {skipped} صفحة خارج النطاق)" if skipped else "")
     if missing:
         msg += "\n\n⚠ ما لقيت مكان لـ: " + "، ".join(missing[:30]) + (" …" if len(missing) > 30 else "")
@@ -197,7 +216,7 @@ def import_text(pid, did, cur, grp, mode, text, *ars):
         toast(f"✅ أضفت صفحة بيضاء بعد هذي الصفحة فيها {len(paras)} فقرة.")
         return view(pid, did, int(cur) + 1, 0)
     autosave(pid, did, cur, grp, ars)
-    done, missing, _ = apply_parsed(pid, did, cur, parsed, "لصق ترجمة جاهزة")
+    done, missing, _ = apply_parsed(pid, did, cur, parsed, "لصق ترجمة جاهزة", "page" if mode == "page" else "file")
     toast(f"✅ لصقت {done} فقرة." + (f" ما لقيت: {'، '.join(missing[:8])}" if missing else ""), warn=bool(missing))
     return view(pid, did, cur, 0)
 

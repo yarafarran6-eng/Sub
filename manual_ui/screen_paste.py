@@ -14,6 +14,8 @@ def build():
         put("ib_a", gr.Number(1, label="من صفحة", precision=0, minimum=1))
         put("ib_b", gr.Number(10, label="إلى صفحة", precision=0, minimum=1))
     put("ib_rng", rng)
+    put("ib_how", gr.Radio([("استبدال نص كل صفحة كاملاً: يُمسح نصها الأصلي ويُكتب النص الملصوق بنفس المكان والحجم (الافتراضي)", "page"),
+                            ("بالأرقام: كل رقم يتبدل مكان الفقرة اللي بنفس رقمها (يحتاج ترقيم يطابق الموقع)", "file")], value="page", label="طريقة الوضع"))
     step("٢", "الترجمة")
     put("ib_up", gr.UploadButton("📄 ارفع ملف txt", file_types=[".txt"], size="sm"))
     put("ib_txt", gr.Textbox(lines=14, max_lines=30, show_label=False, rtl=True, placeholder="=== صفحة 1 ===\n1) ...\n2) ...\n\n=== صفحة 2 ===\n1) ..."))

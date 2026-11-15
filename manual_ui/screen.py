@@ -121,7 +121,7 @@ def _wire(tabs):
 
     C["ib_kind"].change(lambda k: gr.update(visible=(k == "range")), C["ib_kind"], C["ib_rng"])
     C["ib_up"].upload(h_text.load_txt, C["ib_up"], C["ib_txt"])
-    P(C["b_ib"].click(h_text.import_book, S + [C["ib_kind"], C["ib_a"], C["ib_b"], C["ib_txt"]], ALL))
+    P(C["b_ib"].click(h_text.import_book, S + [C["ib_kind"], C["ib_a"], C["ib_b"], C["ib_how"], C["ib_txt"]], ALL))
     C["imp_up"].upload(h_text.load_txt, C["imp_up"], C["imp_txt"])
     P(C["b_imp"].click(lambda *a: h_text.import_text(*a[:6], *a[6:]), S + [C["imp_mode"], C["imp_txt"]] + ARS, ALL))
     # ---- style blocks: the page one (px "p_") and ONE shared paragraph one (px "q_", paragraph number in q_n)

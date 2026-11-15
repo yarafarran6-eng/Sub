@@ -126,16 +126,29 @@ assert _ht.parse_pasted("=== صفحة 3 ===\n1) (لا يوجد نص)") == {3: {1
 print("NOTEXT OK")
 
 # whole file / range
-_o = _ht.import_book(*S[:4], "all", 1, 1, "=== صفحة 1 ===\n1) أول كامل\n=== صفحة 99 ===\n1) ضائعة")
+_o = _ht.import_book(*S[:4], "all", 1, 1, "file", "=== صفحة 1 ===\n1) أول كامل\n=== صفحة 99 ===\n1) ضائعة")
 assert "أول كامل" in manual.load_draft(pid, did)["tr"].values() and "صفحة 99" in v(_o, "ib_msg"), v(_o, "ib_msg")
-_o = _ht.import_book(*S[:4], "range", 3, 5, "=== صفحة 1 ===\n1) خارج النطاق\n=== صفحة 99 ===\n1) x") if False else None
+_o = None if False else None
 try:
-    _ht.import_book(*S[:4], "range", 3, 5, "=== صفحة 1 ===\n1) خارج النطاق")
+    _ht.import_book(*S[:4], "range", 3, 5, "file", "=== صفحة 1 ===\n1) خارج النطاق")
     raise SystemExit("range should be empty")
 except Exception as _e:
     assert "النطاق" in str(_e) or "3" in str(_e) or True
 assert "خارج النطاق" not in manual.load_draft(pid, did)["tr"].values()
-_o = _ht.import_book(*S[:4], "range", 1, 1, "=== صفحة 1 ===\n1) داخل النطاق\n=== صفحة 2 ===\n1) بعده")
+_o = _ht.import_book(*S[:4], "range", 1, 1, "file", "=== صفحة 1 ===\n1) داخل النطاق\n=== صفحة 2 ===\n1) بعده")
 _vals = manual.load_draft(pid, did)["tr"].values()
 assert "داخل النطاق" in _vals and "بعده" not in _vals
 print("BOOK OK")
+
+
+def test_replace_page_text_avoids_pictures():
+    from core import manual
+    units = [{"id": "u1", "page": 0, "translate": True, "text": "x" * 200, "bbox": [50, 50, 500, 200], "size": 16},
+             {"id": "u2", "page": 0, "translate": True, "text": "y" * 200, "bbox": [50, 600, 500, 700], "size": 16}]
+    d = {"extra": {}, "tr": {}, "deleted": {}, "hist": [], "redo": []}
+    n = manual.replace_page_text(d, units, 0, ["a " * 40, "b " * 40, "c " * 40], [(40, 400, 520, 420)])
+    assert n == 3
+    for x in d["extra"].values():
+        b = x["bbox"]
+        assert not (b[1] < 420 and b[3] > 400), b
+test_replace_page_text_avoids_pictures(); print("PAGEREPL OK")
