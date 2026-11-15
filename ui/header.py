@@ -7,6 +7,8 @@ from pathlib import Path
 
 _LOGO = Path(__file__).resolve().parent.parent / "assets" / "logo.svg"
 
+from core.version import BUILD
+
 
 def logo_svg():
     try:
@@ -25,7 +27,8 @@ def hero_html():
             "<p>ارفع الملف، وخلّ المفاتيح تترجم بالتوازي، وراجع الناتج قبل التصدير.</p></div></div>"
             f"<div class='chips'><span class='hchip'>🔑 مفاتيح مفعّلة: {len(ks)}</span>"
             f"<span class='hchip'>📚 ملفات: {len(js)}{f' (يعمل {run})' if run else ''}</span>"
-            f"<span class='hchip'>💰 المصروف: {s['spent_usd']:.3f}$ من {s['budget_usd']}$</span></div></div>")
+            f"<span class='hchip'>💰 المصروف: {s['spent_usd']:.3f}$ من {s['budget_usd']}$</span>"
+            f"<span class='hchip' title='رقم نسخة الموقع اللي يشتغل الحين'>🏷 نسخة {BUILD}</span></div></div>")
 
 
 def banner_html():
