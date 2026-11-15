@@ -1,2 +1,5 @@
-"""Shown in the page header, so anyone can see which version of the site is really running (bump it with every change)."""
-BUILD = "2026-11-15.7"
+"""Shown in the page header and on the login screen, so anyone can see which version of the site is really running.
+With every change: set BUILD_DATE to today and raise BUILD_NO by one."""
+BUILD_DATE = "2026-11-15"
+BUILD_NO = 8
+BUILD = f"{BUILD_DATE} · {BUILD_NO}"
