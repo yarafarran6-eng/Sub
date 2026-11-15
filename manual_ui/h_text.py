@@ -98,6 +98,35 @@ def parse_pasted(text):
     return out
 
 
+def read_txt(path):
+    """Text of a .txt file in whatever encoding it was saved (UTF-8 with/without BOM, UTF-16, Windows Arabic)."""
+    raw = open(path, "rb").read()
+    if raw[:2] in (b"\xff\xfe", b"\xfe\xff"):
+        return raw.decode("utf-16")
+    for enc in ("utf-8-sig", "cp1256"):
+        try:
+            return raw.decode(enc)
+        except (UnicodeDecodeError, UnicodeError):
+            continue
+    return raw.decode("utf-8", "replace")
+
+
+@safe
+def load_txt(file):
+    """A .txt file with the numbered translation: its text goes into the paste box (so it can be checked before pasting)."""
+    from .data import path_of
+    path = path_of(file)
+    if not path:
+        return gr.update()
+    text = read_txt(path)
+    n = len(parse_pasted(text).get(None, {})) + sum(len(v) for k, v in parse_pasted(text).items() if k is not None)
+    if not n:
+        toast("قرأت الملف لكن ما لقيت فيه فقرات مرقّمة بالشكل 1) النص.", warn=True)
+    else:
+        toast(f"📄 قرأت الملف: {n} فقرة. راجعها ثم اضغط «ألصق الترجمة في الفقرات».")
+    return text
+
+
 @safe
 def import_text(pid, did, cur, grp, mode, text, *ars):
     """Puts a ready translation (numbered paragraphs, from a chat) into the paragraphs: each number = the paragraph with that number on the page."""

@@ -114,3 +114,10 @@ _tp = [i for i, x in enumerate(_e) if x["k"] == "t"][0]
 _png, _, _txt = __import__("manual_ui.h_output", fromlist=["x"]).preview_png(pid, did, _tp)
 import fitz as _f; _pm = _f.Pixmap(_png); assert _pm.width > 100 and "نصية" in _txt, _txt
 print("BLANK OK")
+
+import tempfile as _tf
+_f = _tf.NamedTemporaryFile("wb", suffix=".txt", delete=False); _f.write("\ufeff=== صفحة 1 ===\n1) مرحبا".encode("utf-8")); _f.close()
+assert _ht.load_txt(_f.name).strip().endswith("مرحبا")
+_f2 = _tf.NamedTemporaryFile("wb", suffix=".txt", delete=False); _f2.write("1) مرحبا".encode("cp1256")); _f2.close()
+assert _ht.read_txt(_f2.name) == "1) مرحبا"
+print("TXT OK")
