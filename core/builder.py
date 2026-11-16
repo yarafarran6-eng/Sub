@@ -186,7 +186,7 @@ def fitz_rect(*a):
     return fitz.Rect(*a)
 
 
-def _apply_page(doc, pno, us, obstacles, tgt, default_family=None, bg=None, bedit=None):
+def _apply_page(doc, pno, us, obstacles, tgt, default_family=None, bg=None, bedit=None, report=None):
     """Replaces the original text of the given paragraphs on one page. Returns how many were shrunk to fit."""
     import fitz
     rtl = tgt in RTL
@@ -295,11 +295,29 @@ def _apply_page(doc, pno, us, obstacles, tgt, default_family=None, bg=None, bedi
             page.draw_rect(fitz.Rect(used.x0 - pad, used.y0 - pad, used.x1 + pad, used.y1 + pad), color=None,
                            fill=_hex_rgb(u["hl"]), overlay=True)
         r_used, spare, scale = _fit(page, rect, body, css, arch, ymax)
+        if report is not None:                # where the text sits at its natural size (used by the layout help): a paragraph that is moved is never shrunk
+            nat = _grow_to_need(scratch, page, rect, body, css, arch)
+            report[u["id"]] = [nat.x0, nat.y0, nat.x1, max(nat.y1, nat.y0 + 1.0)]
         if scale and scale < 1:
             shrunk += 1
     if scratch is not None:
         scratch.close()
     return shrunk
+
+
+def natural_height(text, width, size, family=None, lh=1.3, indent=0.0, bold=False):
+    """The real height the builder needs for this text in a column of this width at this size (right-to-left, justified)."""
+    import fitz
+    fam = font_families().get(family or DEFAULT_FAMILY) or font_families().get(DEFAULT_FAMILY)
+    arch = fitz.Archive(str(FONTS))
+    css = (f"@font-face{{font-family:'AR';src:url('{fam[0]}');}}@font-face{{font-family:'AR';font-weight:bold;src:url('{fam[1]}');}}"
+           "@font-face{font-family:'LAT';src:url('NotoSans-Regular.ttf');}@font-face{font-family:'LAT';font-weight:bold;src:url('NotoSans-Bold.ttf');}.fb{font-family:'LAT';}"
+           f"body{{font-family:'AR';font-size:{size}pt;text-align:justify;direction:rtl;margin:0;font-weight:{'bold' if bold else 'normal'};line-height:{lh};text-indent:{indent}pt;}}")
+    doc = fitz.open()
+    pg = doc.new_page(width=max(width + 40, 100), height=3000)
+    spare, _ = pg.insert_htmlbox(fitz.Rect(10, 10, 10 + width, 2990), "<p style='margin:0'>" + _rich_text(text, fam[0]) + "</p>", css=css, archive=arch, scale_low=1)
+    doc.close()
+    return 2980 - spare if spare >= 0 else 2980
 
 
 def _grow_to_need(scratch, page, rect, body, css, arch):
@@ -495,7 +513,7 @@ def native_dpi(page, lo=130, hi=700):
     return int(min(hi, max(lo, best)))
 
 
-def build_plan_pdf(src_pdf, entries, units, tgt, out_path=None, font=None, page_styles=None, base_dir=None, only_pos=None, png=None, dpi=None):
+def build_plan_pdf(src_pdf, entries, units, tgt, out_path=None, font=None, page_styles=None, base_dir=None, only_pos=None, png=None, dpi=None, report=None):
     """Builds the output from the page plan: original pages, imported pages, blank pages, in the chosen order.
     only_pos: build just that one page (fast preview), and write a PNG instead of a PDF when png is given."""
     import fitz
@@ -535,7 +553,9 @@ def build_plan_pdf(src_pdf, entries, units, tgt, out_path=None, font=None, page_
     shrunk = 0
     for idx, p in todo:
         ps = (page_styles or {}).get(str(p)) or {}
-        shrunk += _apply_page(out, idx, by_page.get(p, []), all_on_page.get(p, []), tgt, font, ps.get("bg"), ps.get("boxes"))
+        shrunk += _apply_page(out, idx, by_page.get(p, []), all_on_page.get(p, []), tgt, font, ps.get("bg"), ps.get("boxes"), report)
+    if report is not None and len(out):
+        report["_page"] = [out[0].rect.width, out[0].rect.height]
     info = {"pages": len(out), "shrunk_blocks": shrunk}
     if png:
         out[0].get_pixmap(dpi=dpi or native_dpi(out[0], hi=1800 * 72 / max(out[0].rect.height, 1))).save(png)

@@ -152,3 +152,21 @@ def test_replace_page_text_avoids_pictures():
         b = x["bbox"]
         assert not (b[1] < 420 and b[3] > 400), b
 test_replace_page_text_avoids_pictures(); print("PAGEREPL OK")
+
+
+def test_layout():
+    from core import layout
+    r = [("a", [50, 100, 500, 140]), ("b", [50, 150, 500, 190]), ("c", [50, 400, 500, 440])]
+    sp = layout.auto_spacing(r, 800)                    # equal gaps between the first top and the last bottom
+    assert abs(sp["b"] - 100) < 0.5 and "a" not in sp and "c" not in sp
+    sp2 = layout.auto_spacing(r, 800, [(0, 200, 600, 210)])          # a picture between them: b stays with a, c is alone below it
+    assert "c" not in sp2 and "b" not in sp2
+    ops, note = layout.parse('x {"ops":[{"who":"all","except":[2],"do":"center_h"},{"who":[1],"do":"move","dx":0,"dy":-10,"text":"HACK"},{"who":[9],"do":"move"},{"who":"all","do":"rm -rf"}],"note":"تم"} y', 3)
+    assert [o["do"] for o in ops] == ["center_h", "move"] and ops[0]["who"] == [1, 3] and "text" not in ops[1]
+    rects = {1: [50, 100, 500, 140], 2: [60, 200, 300, 240], 3: [0, 300, 100, 340]}
+    mv, al = layout.apply_ops(ops, rects, (600, 800))
+    assert abs((50 + 500) / 2 + mv[1][0] - 300) < 0.01 and mv[2] == [0.0, 0.0] and abs(mv[1][1] - 10) < 0.01   # dy -10 = 10 points DOWN
+    assert layout.parse("nonsense", 3)[0] == []
+
+
+test_layout(); print("LAYOUT OK")

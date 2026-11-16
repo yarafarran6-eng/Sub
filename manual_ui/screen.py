@@ -1,6 +1,6 @@
 """The manual translation screen: a bar that is always visible, four tabs, and the wiring of every button."""
 import gradio as gr
-from . import h_boxes, h_files, h_output, h_pages, h_text, panel, screen_edit, screen_export, screen_file, screen_pages, screen_paste
+from . import h_boxes, h_files, h_layout, h_output, h_pages, h_text, panel, screen_edit, screen_export, screen_file, screen_pages, screen_paste
 from .consts import SLOTS
 from .reg import C, R, put
 from .view import file_choices, view
@@ -121,6 +121,8 @@ def _wire(tabs):
 
     C["ib_kind"].change(lambda k: gr.update(visible=(k == "range")), C["ib_kind"], C["ib_rng"])
     C["ib_up"].upload(h_text.load_txt, C["ib_up"], C["ib_txt"])
+    P(C["b_lay_auto"].click(h_layout.auto, S, ALL))
+    P(C["b_lay_ai"].click(h_layout.ask, S + [C["lay_req"], C["ai_model"], C["ai_fb"]], ALL))
     P(C["b_ib"].click(h_text.import_book, S + [C["ib_kind"], C["ib_a"], C["ib_b"], C["ib_how"], C["ib_txt"]], ALL))
     C["imp_up"].upload(h_text.load_txt, C["imp_up"], C["imp_txt"])
     P(C["b_imp"].click(lambda *a: h_text.import_text(*a[:6], *a[6:]), S + [C["imp_mode"], C["imp_txt"]] + ARS, ALL))

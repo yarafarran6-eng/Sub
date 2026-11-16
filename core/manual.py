@@ -552,8 +552,9 @@ def replace_page_text(d, units, orig_page, paras, obstacles=(), font=""):
     size = statistics.median(u["size"] for u in longs)
     pitch = statistics.median(u["bbox"][3] - u["bbox"][1] for u in longs)
     pitch = pitch if size * 1.3 < pitch < size * 2.4 else size * 1.75                 # the book's own line spacing
-    drawn = size * 1.04                                                              # the size the builder really draws right-to-left text at
+    drawn = size * 0.94                                                              # the Amiri copy we draw with sets a little wider than the book's own typesetting: 6% smaller gives the same line breaks (the builder adds 4% to right-to-left text, so the box gets drawn/1.04)
     lh = pitch / drawn
+    size_h = None
     short = [x1 - u["bbox"][2] for u in rest if 8 < x1 - u["bbox"][2] < 45 and u["size"] < body * 1.25 and len(u["text"]) > 30]
     indent = round(statistics.median(short), 1) if len(short) >= 2 else 0.0                       # the first line of a paragraph starts indented
     paras = [t for t in paras if t]
@@ -566,7 +567,8 @@ def replace_page_text(d, units, orig_page, paras, obstacles=(), font=""):
         if lines_n == 1 and hp:
             hp = [" ".join(hp)]
     obs = sorted([o for o in obstacles if o[3] > y0 and o[1] < y1 and (o[2] - o[0]) > 20], key=lambda o: o[1])
-    need = [_wrapped_lines(t, drawn, x1 - x0, font, indent) * pitch for t in paras]
+    from . import builder
+    need = [builder.natural_height(t, x1 - x0, drawn, font or None, lh, indent) for t in paras]
     room = (y1 - y0) - sum(min(o[3], y1) - max(o[1], y0) for o in obs)           # the height left once the page's pictures/ornaments are left alone
     k = min(1.0, room / max(sum(need), 1))                                           # not enough room: the spacing tightens a little
     tx = Tx(d, "لصق نص الصفحة كاملة")
@@ -591,7 +593,7 @@ def replace_page_text(d, units, orig_page, paras, obstacles=(), font=""):
         nonlocal first
         xid = "X_" + uuid.uuid4().hex[:5]
         ex = {"id": xid, "kind": "text", "translate": True, "custom": True, "page": orig_page, "after": "", "bbox": box, "text": "",
-              "size": kw.pop("size", size), "bold": False, "color": 0, "align": "left", "repl": True}
+              "size": kw.pop("size", drawn) / 1.04, "bold": False, "color": 0, "align": "left", "repl": True}
         if font:
             ex["font"] = font
         if first:
@@ -601,7 +603,7 @@ def replace_page_text(d, units, orig_page, paras, obstacles=(), font=""):
         tx.set("tr", xid, value=t)
 
     if hp:                                                    # the heading: the same place, size and weight as the original, centred
-        hs = statistics.median(u["size"] for u in heads)
+        hs = statistics.median(u["size"] for u in heads) * 0.94
         hy0, hy1 = min(u["bbox"][1] for u in heads), max(u["bbox"][3] for u in heads)
         step = (hy1 - hy0) / len(hp)
         for i, t in enumerate(hp):
@@ -661,6 +663,19 @@ def reset_ustyle(d, uid, keys=STYLE_KEYS):
     tx = Tx(d, "إعادة تعيين تنسيق فقرة")
     for k in keys:
         tx.set("ustyle", uid, k, value=MISSING)
+    return tx.commit()
+
+
+def shift_many(d, moves, aligns=None, label="ترتيب الفقرات"):
+    """moves: {uid: (dx_right, dy_down)} added to the paragraphs' own shift; aligns: {uid: align}. One undo step for all of them."""
+    tx = Tx(d, label)
+    for uid, (dx, dy) in moves.items():
+        st = d["ustyle"].get(uid, {})
+        for k, add in (("dx", dx), ("dy", dy)):
+            v = round(float(st.get(k, 0) or 0) + float(add or 0), 2)
+            tx.set("ustyle", uid, k, value=MISSING if abs(v) < 0.05 else v)
+    for uid, a in (aligns or {}).items():
+        tx.set("ustyle", uid, "align", value=a or MISSING)
     return tx.commit()
 
 
