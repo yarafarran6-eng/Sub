@@ -17,7 +17,7 @@ o = h_files.new_file("/tmp/sample.pdf"); pid, did = v(o, "pid"), v(o, "did")
 S = (pid, did, 0, 0)
 assert o[C["s0_g"]]["visible"] and not o[C["s9_g"]]["visible"]
 # autosave + per-paragraph style, step-back and reset of ONE option
-h_text.blur(*S, "الفصل الأول", 0)
+h_text.blur(*S, "", "الفصل الأول", 0)
 assert list(manual.load_draft(pid, did)["tr"].values()) == ["الفصل الأول"]
 uid = manual.page_items(manual.load(pid)[1], manual.load_draft(pid, did), 0)[1]["uid"]
 for kw in (dict(dsize=14), dict(dsize=16), dict(font="Amiri")):
@@ -170,3 +170,23 @@ def test_layout():
 
 
 test_layout(); print("LAYOUT OK")
+
+
+def test_autosave_token():
+    """Boxes drawn for page A must never be saved into page B, even when the screen already says B (flips update the number first)."""
+    from manual_ui.data import autosave, token
+    from manual_ui import h_text
+    from manual_ui.data import items_now
+    n_items = len(items_now(pid, did, 0, 0)[5])
+    texts = [f"TOKEN-TEST {i}" for i in range(n_items)]
+    autosave(pid, did, 1, 0, [token(pid, did, 0, 0)] + texts)          # screen says page 2, the boxes were drawn for page 1
+    d = manual.load_draft(pid, did)
+    first_page = [i["uid"] for i in items_now(pid, did, 0, 0)[5]]
+    second_page = [i["uid"] for i in items_now(pid, did, 1, 0)[5]]
+    assert all(d["tr"].get(u) == t for u, t in zip(first_page, texts)), "saved to the page the boxes belong to"
+    assert not any("TOKEN-TEST" in (d["tr"].get(u) or "") for u in second_page), "nothing leaked into the page the screen says"
+    assert autosave(pid, did, 0, 0, [token("other", did, 0, 0)] + ["X"] * n_items) == 0        # another file's boxes are ignored
+    assert autosave(pid, did, 0, 0, [token(pid, did, 0, 0)] + texts) == 0                       # same text again: nothing changes
+
+
+test_autosave_token(); print("TOKEN OK")

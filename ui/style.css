@@ -133,3 +133,5 @@ button .ic, .hchip .ic { margin-inline: 0.25em; }
 /* the page preview always has the same display width, whatever resolution it was drawn at */
 #pv_img { height: auto !important; }
 #pv_img img { height: 82vh !important; width: auto !important; max-width: 100% !important; display: block; margin-inline: auto; object-fit: contain; }
+
+.tok{display:none!important}

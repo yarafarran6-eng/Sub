@@ -50,7 +50,7 @@ def nav_outputs():
     """Every component view() can fill: the fixed ones plus the paragraph slots and page panel, without their buttons."""
     import re
     fixed = {"pid", "did", "cur", "grp", "page", "info", "note", "pager", "pg_target", "last", "curbar", "b_grp_prev", "b_grp_next", "bx_img", "bx_pick",
-             "bx_info", "r_on", "r_a", "r_b", "r_out", "plan", "files_sel", "dsel", "chap", "ctx", "style", "font", "orig", "ai_model", "ai_checker", "saved", "bg_mode", "bg_dir", "bg_c1", "bg_c2", "q_n"}
+             "bx_info", "r_on", "r_a", "r_b", "r_out", "plan", "files_sel", "dsel", "chap", "ctx", "style", "font", "orig", "ai_model", "ai_checker", "saved", "bg_mode", "bg_dir", "bg_c1", "bg_c2", "q_n", "shown"}
     skip = re.compile(r"(_rst|_back|_ai|_rev|_ocr|_num|_step)$|_mv_")
     return [c for k, c in C.items() if k in fixed or (re.match(r"^(p_|q_)", k) and not skip.search(k)) or re.match(r"^s\d+_(g|head|en|ar|del)$", k)]
 
@@ -58,7 +58,7 @@ def nav_outputs():
 def _wire(tabs):
     ALL = list(C.values())
     S = [C["pid"], C["did"], C["cur"], C["grp"]]
-    ARS = [C[f"s{i}_ar"] for i in range(SLOTS)]
+    ARS = [C["shown"]] + [C[f"s{i}_ar"] for i in range(SLOTS)]       # first the token of the page the boxes belong to, then the boxes
     # page flips only need the outputs view() can set (~1/3 of all components): far less for the browser to process
     NAVOUT = nav_outputs()
     AIS = [C[k] for k in ("ai_model", "ai_fb", "ai_mode", "ai_checker", "ai_cfb")]
@@ -66,7 +66,9 @@ def _wire(tabs):
     P = lambda ev: ev.then(h_text.pv_now, S, [C["pv_img"], C["pv_info"]], show_progress="hidden")
     # page flips: step 1 answers with the picture at once, step 2 fills the paragraphs
     FLIP = [C["cur"], C["pv_img"], C["pv_info"]]
-    F = lambda ev: ev.then(h_text.show, S, NAVOUT, show_progress="hidden")
+    F = lambda ev: ev.then(h_text.show, S + ARS, NAVOUT, show_progress="hidden")
+    # a long job (AI) never writes into the boxes itself: it saves to the draft, and the page the person is on NOW is redrawn afterwards
+    LONG = lambda fn: (lambda *a: (fn(*a), None)[1])
     go_edit = lambda ev: P(ev.then(lambda: gr.Tabs(selected="edit"), None, tabs))
 
     def ask(btn, name, fn, inputs):
@@ -105,15 +107,15 @@ def _wire(tabs):
     # ---- paragraphs
     for i in range(SLOTS):
         ar = C[f"s{i}_ar"]
-        ar.blur(lambda pid, did, cur, grp, t, i=i: h_text.blur(pid, did, cur, grp, t, i), S + [ar], C["saved"])
-        C[f"s{i}_ai"].click(lambda pid, did, cur, grp, *a, i=i: h_text.ai_slot(pid, did, cur, grp, i, *a), S + AIS, ar)
-        C[f"s{i}_rev"].click(lambda pid, did, cur, grp, *a, i=i: h_text.review_slot(pid, did, cur, grp, i, *a), S + AIS, ar)
-        C[f"s{i}_ocr"].click(lambda pid, did, cur, grp, i=i: h_text.ocr_slot(pid, did, cur, grp, i), S, C[f"s{i}_en"])
-        C[f"s{i}_num"].click(lambda pid, did, cur, grp, t, i=i: h_text.number_lines(pid, did, cur, grp, t, i), S + [ar], ar)
+        ar.blur(lambda pid, did, cur, grp, tok, t, i=i: h_text.blur(pid, did, cur, grp, tok, t, i), S + [C["shown"], ar], C["saved"])
+        P(F(C[f"s{i}_ai"].click(LONG(lambda pid, did, cur, grp, *a, i=i: h_text.ai_slot(pid, did, cur, grp, i, *a)), S + AIS, None, concurrency_id="ai")))
+        P(F(C[f"s{i}_rev"].click(LONG(lambda pid, did, cur, grp, *a, i=i: h_text.review_slot(pid, did, cur, grp, i, *a)), S + AIS, None, concurrency_id="ai")))
+        F(C[f"s{i}_ocr"].click(LONG(lambda pid, did, cur, grp, i=i: h_text.ocr_slot(pid, did, cur, grp, i)), S, None, concurrency_id="ai"))
+        P(F(C[f"s{i}_num"].click(LONG(lambda pid, did, cur, grp, tok, t, i=i: h_text.number_lines(pid, did, cur, grp, tok, t, i)), S + [C["shown"], ar], None)))
         P(C[f"s{i}_del"].click(lambda pid, did, cur, grp, i=i: h_text.slot_delete(pid, did, cur, grp, i), S, ALL))
-    P(C["b_ai_page"].click(h_text.ai_page, S + [C["ai_keep"]] + AIS, ALL))
-    P(C["b_rev_page"].click(h_text.review_page, S + AIS, ALL))
-    P(C["b_ocr_page"].click(h_text.ocr_page, S, ALL))
+    P(F(C["b_ai_page"].click(LONG(h_text.ai_page), S + [C["ai_keep"]] + AIS, None, concurrency_id="ai")))
+    P(F(C["b_rev_page"].click(LONG(h_text.review_page), S + AIS, None, concurrency_id="ai")))
+    P(F(C["b_ocr_page"].click(LONG(h_text.ocr_page), S, None, concurrency_id="ai")))
     P(C["b_add"].click(h_text.add_para, S + [C["add_after"]], ALL))
     C["style"].blur(h_text.ai_cfg, [C["pid"], C["did"], C["ctx"], C["style"]], C["saved"])
     C["ctx"].blur(h_text.ai_cfg, [C["pid"], C["did"], C["ctx"], C["style"]], C["saved"])
@@ -122,7 +124,7 @@ def _wire(tabs):
     C["ib_kind"].change(lambda k: gr.update(visible=(k == "range")), C["ib_kind"], C["ib_rng"])
     C["ib_up"].upload(h_text.load_txt, C["ib_up"], C["ib_txt"])
     P(C["b_lay_auto"].click(h_layout.auto, S, ALL))
-    P(C["b_lay_ai"].click(h_layout.ask, S + [C["lay_req"], C["ai_model"], C["ai_fb"]], ALL))
+    P(F(C["b_lay_ai"].click(LONG(h_layout.ask), S + [C["lay_req"], C["ai_model"], C["ai_fb"]], None, concurrency_id="ai")))
     P(C["b_ib"].click(h_text.import_book, S + [C["ib_kind"], C["ib_a"], C["ib_b"], C["ib_how"], C["ib_txt"]], ALL))
     C["imp_up"].upload(h_text.load_txt, C["imp_up"], C["imp_txt"])
     P(C["b_imp"].click(lambda *a: h_text.import_text(*a[:6], *a[6:]), S + [C["imp_mode"], C["imp_txt"]] + ARS, ALL))
@@ -185,3 +187,13 @@ def _wire(tabs):
     F(C["b_pv_next"].click(lambda *a: h_text.flip(*a[:5], "next", *a[5:]), NAV + ARS, FLIP))
     C["b_build"].click(h_output.build, S + ARS, C["out"])
     C["font"].input(h_output.default_font, [C["pid"], C["did"], C["font"]], C["saved"])
+
+    # every action that reads or changes the open file runs ONE AT A TIME, in the order the clicks were made (two flips, a save and a redraw can never
+    # overlap and answer out of order); the AI jobs have their own lane so flipping pages still works while they run
+    from gradio.context import Context
+    mine = {id(C["pid"]), id(C["did"])}
+    for fn in Context.root_block.fns.values():
+        if fn.concurrency_id != "ai" and any(id(c) in mine for c in (list(fn.inputs or []) + list(fn.outputs or []))):
+            fn.concurrency_id, fn.concurrency_limit = "edit", 1
+        elif fn.concurrency_id == "ai":
+            fn.concurrency_limit = 2

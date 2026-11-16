@@ -731,7 +731,9 @@ def page_items(units, d, orig_page):
                 "font": st.get("font", ""), "size": st.get("dsize", 0), "tcolor": st.get("tcolor", ""), "hl": st.get("hl", ""),
                 "dx": st.get("dx", 0), "dy": st.get("dy", 0), "align": st.get("align", ""), "page_font": ps.get("font", "")}
 
-    for x in [e for e in extras if not e.get("after")]:
+    # the added paragraphs at the top of the page are listed by where they sit (top to bottom), never by the order they happen to sit in the file:
+    # undo/redo and saving could otherwise shuffle them, and «paragraph 3» would become another paragraph
+    for x in sorted([e for e in extras if not e.get("after")], key=lambda e: (round(e["bbox"][1] / 3), round(e["bbox"][0]), e["id"])):
         items.append(view(x))
     replaced = any(e.get("repl") for e in extras)          # a page whose text was replaced: its old cut-up fragments are not listed any more
     for u in units:

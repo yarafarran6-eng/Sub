@@ -53,8 +53,21 @@ def orig_page(d, cur):
     return e["p"] if e and e["k"] == "o" else None
 
 
+def token(pid, did, pos, grp):
+    """Says which page/group the Arabic boxes on screen were drawn for. It travels with the boxes (same answer), so a box can never be saved into another page."""
+    return f"tok|{pid}|{did}|{int(pos)}|{int(grp)}"
+
+
 def autosave(pid, did, cur, grp, ars):
-    """Saves the Arabic boxes of the current group of paragraphs. Returns how many changed."""
+    """Saves the Arabic boxes of the group of paragraphs they were DRAWN for. Returns how many changed.
+    ars[0] may be that page's token (see token()): the boxes then go to the page in the token, whatever page the screen says now
+    (page number and boxes arrive in two steps when flipping, so for a moment they disagree)."""
+    ars = list(ars)
+    if ars and isinstance(ars[0], str) and ars[0].startswith("tok|"):
+        parts = ars.pop(0).split("|")
+        if len(parts) != 5 or parts[1] != (pid or "") or parts[2] != (did or ""):
+            return 0                                   # boxes of another file/draft: never write them here
+        cur, grp = int(parts[3]), int(parts[4])
     with manual._lock:
         meta, units, d, eff, allit, items = items_now(pid, did, cur, grp)
         n = 0

@@ -4,7 +4,7 @@ from core import builder, manual, priority
 from ui.common import toast
 from . import panel
 from .consts import GARBLED_MSG, SLOTS
-from .data import cur_items, label, status
+from .data import token as _token, cur_items, label, status
 from .reg import R
 
 
@@ -42,7 +42,7 @@ def _say(msg):
 
 def empty(msg=""):
     u = gr.update
-    out = R(pid="", did="", cur=0, grp=0, page=1, info="", note="افتح ملفاً من تبويب «الملف» أو ارفع ملفاً جديداً.", pager="", last="",
+    out = R(pid="", did="", cur=0, grp=0, shown="", page=1, info="", note="افتح ملفاً من تبويب «الملف» أو ارفع ملفاً جديداً.", pager="", last="",
             curbar="<div class='curbar'>لا يوجد ملف مفتوح. ابدأ من تبويب «الملف».</div>", plan=[], pg_target=1,
             files_sel=u(choices=file_choices(), value=None), dsel=u(choices=[], value=None), chap=u(choices=[], value=None),
             ctx="", style="", font="", orig=None, ai_model=u(choices=priority.choices("translate")), ai_checker=u(choices=priority.choices("edit")))
@@ -66,7 +66,10 @@ def view(pid, did, pos, grp, msg=""):
     page_changed = d.get("page") != pos
     if page_changed or d.get("grp") != grp:
         d["page"], d["grp"] = pos, grp
-        manual.save_draft(pid, d)
+        with manual._lock:                # re-read inside the lock: another action may have saved since we loaded, and we must not overwrite it
+            fresh = manual.load_draft(pid, did)
+            fresh["page"], fresh["grp"] = pos, grp
+            manual.save_draft(pid, fresh)
     done, total = manual.stats(units, d)
     info = (f"**الصفحة {pos + 1} من {len(eff)}** · {label(e)} · المترجم في الملف {done} من {total} فقرة") if e else "لا توجد صفحات في الملف."
     note = ""
@@ -77,7 +80,7 @@ def view(pid, did, pos, grp, msg=""):
     pager = f"الفقرات {grp * SLOTS + 1}–{min((grp + 1) * SLOTS, len(items_all))} من {len(items_all)} · مجموعة {grp + 1} من {ngrp}" if ngrp > 1 else ""
     u = gr.update
     last = manual.last_label(d)
-    out = R(pid=pid, did=did, cur=pos, grp=grp, page=pos + 1, info=info, note=note, pager=pager, pg_target=pos + 1,
+    out = R(pid=pid, did=did, cur=pos, grp=grp, shown=_token(pid, did, pos, grp), page=pos + 1, info=info, note=note, pager=pager, pg_target=pos + 1,
             last=f"آخر تغيير: {last}" if last else "لا توجد تغييرات للتراجع عنها",
             curbar=f"<div class='curbar'><b>الملف:</b> {meta['name']} · <b>المسودة:</b> {d['name']} · <b>الصفحة:</b> {pos + 1} من {len(eff)}</div>",
             b_grp_prev=u(visible=ngrp > 1), b_grp_next=u(visible=ngrp > 1))

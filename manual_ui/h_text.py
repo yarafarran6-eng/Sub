@@ -11,7 +11,7 @@ from core import textcheck
 from .consts import SLOTS
 from .data import autosave, cur_items, items_now, load_all, need, orig_page
 from .reg import R
-from .view import view
+from .view import _say, view
 
 
 def _target(pid, did, cur, target, how):
@@ -237,10 +237,19 @@ def import_text(pid, did, cur, grp, mode, text, *ars):
     return view(pid, did, cur, 0)
 
 
+def _same(ars, cur):
+    """True when the boxes on screen are the ones of page `cur` (so no page change is half way)."""
+    t = ars[0] if ars and isinstance(ars[0], str) else ""
+    return t.startswith("tok|") and t.split("|")[3:4] == [str(int(cur))]
+
+
 @safe
-def show(pid, did, cur, grp):
-    """Step 2: the paragraphs and panels of the page we moved to."""
-    return view(pid, did, cur, 0)
+def show(pid, did, cur, grp, *ars):
+    """Step 2: the paragraphs and panels of the page we moved to (or the page we are on, after a long job). What is typed in the boxes now is saved
+    first, to the page those boxes belong to, so redrawing can never throw a typed word away."""
+    if pid and ars:
+        autosave(pid, did, cur, grp, ars)
+    return view(pid, did, cur, grp if ars and _same(ars, cur) else 0)
 
 
 def auto_preview(pid, did, pos):
@@ -281,21 +290,21 @@ def save_page(pid, did, cur, grp, *ars):
 
 
 @safe
-def blur(pid, did, cur, grp, text, i):
+def blur(pid, did, cur, grp, tok, text, i):
     if not pid:
         return R(saved="")
-    n = autosave(pid, did, cur, grp, [None] * i + [text])
+    n = autosave(pid, did, cur, grp, [tok] + [None] * i + [text])
     return R(saved=f"💾 حُفظ تلقائياً {time.strftime('%H:%M:%S')}" if n else "")
 
 
 @safe
-def number_lines(pid, did, cur, grp, text, i):
+def number_lines(pid, did, cur, grp, tok, text, i):
+    """Saves the numbered text; the box is redrawn by the step that follows (show), so it can never land on another page."""
     guard()
     need(pid)
     new = manual_ai.number_lines(text)
-    autosave(pid, did, cur, grp, [None] * i + [new])
+    autosave(pid, did, cur, grp, [tok] + [None] * i + [new])
     toast("🔢 رُقّمت الأسطر.")
-    return R(**{f"s{i}_ar": new})
 
 
 def _routes(model, fb, checker, cfb):

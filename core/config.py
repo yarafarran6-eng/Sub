@@ -1,4 +1,5 @@
-import json, os, threading
+import json
+import time, os, threading
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -28,7 +29,14 @@ def write_json(path, obj):
     tmp = path.with_suffix(path.suffix + ".tmp")
     with LOCK:
         tmp.write_text(json.dumps(obj, ensure_ascii=False, indent=1), encoding="utf-8")
-        os.replace(tmp, path)
+        for attempt in range(8):          # on Windows the replace fails for a moment while another thread is reading the file: wait and try again
+            try:
+                os.replace(tmp, path)
+                break
+            except PermissionError:
+                if attempt == 7:
+                    raise
+                time.sleep(0.05 * (attempt + 1))
 
 
 SETTINGS_FILE = DATA / "settings.json"

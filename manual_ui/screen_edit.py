@@ -74,6 +74,7 @@ def _slot(i):
 
 
 def build():
+    put("shown", gr.Textbox("", show_label=False, container=False, elem_classes="tok"))        # which page the boxes below were drawn for (never shown)
     with gr.Row():
         put("chap", gr.Dropdown([], value=None, label="الفصول", interactive=True, scale=2))
         put("b_prev", gr.Button("◀ الصفحة السابقة", scale=1))
