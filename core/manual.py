@@ -548,7 +548,7 @@ def replace_page_text(d, units, orig_page, paras, obstacles=(), font=""):
     x0 = min(u["bbox"][0] for u in longs)
     x1 = max(u["bbox"][2] for u in longs)
     y0 = min(u["bbox"][1] for u in (rest or pu))
-    y1 = max(u["bbox"][3] for u in pu)
+    y1 = max(u["bbox"][3] for u in ([v for v in pu if len(v["text"].strip()) > 3] or pu))   # (a stray mark far below the text does not count)
     size = statistics.median(u["size"] for u in longs)
     ys = []                                                                          # the rows of text (tops of the lines), the real line spacing is the distance between them
     for yy in sorted(u["bbox"][1] for u in rest or pu):
@@ -604,7 +604,7 @@ def replace_page_text(d, units, orig_page, paras, obstacles=(), font=""):
         nonlocal first
         xid = "X_" + uuid.uuid4().hex[:5]
         ex = {"id": xid, "kind": "text", "translate": True, "custom": True, "page": orig_page, "after": "", "bbox": box, "text": "",
-              "size": kw.pop("size", drawn) / 1.04, "bold": False, "color": 0, "align": "left", "repl": True}
+              "size": kw.pop("size", drawn) / 1.04, "bold": False, "color": 0, "align": "left", "repl": True, "nomirror": True}
         if font:
             ex["font"] = font
         if first:
@@ -613,6 +613,8 @@ def replace_page_text(d, units, orig_page, paras, obstacles=(), font=""):
         tx.set("extra", xid, value=ex)
         tx.set("tr", xid, value=t)
 
+    if body_top and first_row:                                                       # the extra gap kept under the lead line also takes room
+        k = min(k, max(0.5, (room - max(0.0, body_top - y0 - pitch)) / max(sum(need), 1)))
     if hp:                                                    # the heading: the same place, size and weight as the original, centred
         hs = statistics.median(u["size"] for u in heads) * 0.94
         hy0, hy1 = min(u["bbox"][1] for u in heads), max(u["bbox"][3] for u in heads)

@@ -231,9 +231,9 @@ def _apply_page(doc, pno, us, obstacles, tgt, default_family=None, bg=None, bedi
                 limit = min(limit, v["bbox"][1] - 3)
         ymax = max(limit, y0 + h0 * 1.35)
         if (col and h0 < size0 * 2.4 and (x1 - x0) < 0.6 * (col[1] - col[0]) and abs(x0 - col[0]) < 0.2 * (col[1] - col[0])
-                and u.get("align", "left") == "left"):
+                and u.get("align", "left") == "left" and not u.get("nomirror")):
             x0, x1 = col                      # a short line that starts at the margin: use the whole column
-        if rtl and u.get("align") != "center":
+        if rtl and u.get("align") != "center" and not u.get("nomirror"):
             x0, x1 = W - x1, W - x0                      # mirror for right-to-left reading
         dx, dy = float(u.get("dx") or 0), float(u.get("dy") or 0)
         moved = bool(dx or dy)
@@ -271,13 +271,13 @@ def _apply_page(doc, pno, us, obstacles, tgt, default_family=None, bg=None, bedi
             inside = [b for b in boxes if b.contains(cen)]
             if inside:                                     # sitting in a label box: stay inside it
                 b = min(inside, key=lambda q: q.width * q.height)
-                bx0, bx1 = (W - b.x1, W - b.x0) if rtl and u.get("align") != "center" else (b.x0, b.x1)
+                bx0, bx1 = (W - b.x1, W - b.x0) if rtl and u.get("align") != "center" and not u.get("nomirror") else (b.x0, b.x1)
                 lo, hi = max(lo, bx0 + 2), min(hi, bx1 - 2)
             for v in obstacles:
                 if v is u or not v.get("bbox") or v["bbox"][3] < y0 + dy + 1 or v["bbox"][1] > y1 + dy - 1:
                     continue
                 vx0, vx1 = v["bbox"][0], v["bbox"][2]
-                if rtl and u.get("align") != "center":
+                if rtl and u.get("align") != "center" and not u.get("nomirror"):
                     vx0, vx1 = W - vx1, W - vx0
                 if vx1 <= rect.x0 + 1:
                     lo = max(lo, vx1 + 2)
