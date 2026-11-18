@@ -615,7 +615,7 @@ def calib_ratio(cases, font=""):
     return round(max(0.8, min(1.1, max(ok) * 0.96)), 3)
 
 
-def replace_page_text(d, units, orig_page, paras, obstacles=(), font="", ink=None, scale=None):
+def replace_page_text(d, units, orig_page, paras, obstacles=(), font="", ink=None, scale=None, lines=()):
     """Clean text for a WHOLE page (for files whose text is cut into lines/fragments, so numbered paste cannot match): every original paragraph
     of the page is erased and the new paragraphs flow top to bottom in the page's own text column, with the page's own look: the same
     font/size, the same line spacing, the first-line indent, justified, and the chapter heading centred at its own size."""
@@ -647,7 +647,11 @@ def replace_page_text(d, units, orig_page, paras, obstacles=(), font="", ink=Non
     lh = pitch / drawn
     size_h = None
     short = [x1 - ib(u)[2] for u in rest if 6 < x1 - ib(u)[2] < 45 and u["size"] < body * 1.25 and len(u["text"]) > 30]
-    indent = round(statistics.median(short), 1) if len(short) >= 2 else 0.0                       # the first line of a paragraph starts indented
+    firsts = [x1 - l[2] for l in lines if abs(l[0] - x0) < 4 and 6 < x1 - l[2] < 45]       # the text layer's lines: a paragraph's first line starts indented (right-to-left: its right end is short)
+    short = firsts if len(firsts) >= 2 else short
+    indent = round(statistics.median(short), 1) if len(short) >= 2 else 0.0
+    top_line = min(lines, key=lambda l: l[1]) if lines else None
+    cont = bool(firsts) and top_line is not None and x1 - top_line[2] < 4 and not heads          # the page opens in the middle of a paragraph (no indent on its first line)                       # the first line of a paragraph starts indented
     paras = [t for t in paras if t]
     hp = []                                                                          # the leading short paragraphs are the heading
     if heads:
@@ -719,7 +723,7 @@ def replace_page_text(d, units, orig_page, paras, obstacles=(), font="", ink=Non
             add(t, [x0, y, x1, y + h], align_ov="center" if lead_center else "justify", lh=round(lh, 3), indent=0 if lead_center else indent, **({"bold": True} if lead_bold else {}))
             y = max(y + h, body_top or 0)
         else:
-            add(t, [x0, y, x1, y + h], align_ov="justify", lh=round(lh, 3), indent=indent)
+            add(t, [x0, y, x1, y + h], align_ov="justify", lh=round(lh, 3), indent=0 if (i == 0 and cont) else indent)
             y += h
     tx.commit()
     return len(paras) + len(hp)

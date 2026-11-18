@@ -164,6 +164,16 @@ def _page_ink(pid, p, units):
     return out
 
 
+def _page_lines(pid, p):
+    """The text layer's own lines of the page (their boxes show where paragraphs start indented)."""
+    try:
+        import fitz
+        with fitz.open(manual.source_path(pid)) as doc:
+            return [tuple(l["bbox"]) for b in doc[p].get_text("dict")["blocks"] for l in b.get("lines", [])]
+    except Exception:
+        return []
+
+
 _scale_cache = {}
 
 
@@ -226,7 +236,7 @@ def apply_parsed(pid, did, cur, parsed, label, how="file"):
             else:
                 how_p = how
             if how_p == "page":                                # the whole page's text is replaced and laid out again
-                k = manual.replace_page_text(d, units, e["p"], [t for _, t in sorted(paras.items())], _page_obstacles(pid, e["p"]), _page_font(pid, e["p"]), _page_ink(pid, e["p"], units), _book_scale(pid, units, _page_font(pid, e["p"]))) if e["k"] == "o" else 0
+                k = manual.replace_page_text(d, units, e["p"], [t for _, t in sorted(paras.items())], _page_obstacles(pid, e["p"]), _page_font(pid, e["p"]), _page_ink(pid, e["p"], units), _book_scale(pid, units, _page_font(pid, e["p"])), _page_lines(pid, e["p"])) if e["k"] == "o" else 0
                 if k:
                     done += k
                     touched.add(pos)
@@ -238,7 +248,7 @@ def apply_parsed(pid, did, cur, parsed, label, how="file"):
             if holes and e["k"] == "o" and how == "file" and any(paras.values()):
                 # the file's paragraphs do not line up with the page's: some paragraphs of the page would stay EMPTY (a hole in the page).
                 # The whole page is laid out again from the pasted text instead.
-                k = manual.replace_page_text(d, units, e["p"], [t for _, t in sorted(paras.items()) if t], _page_obstacles(pid, e["p"]), _page_font(pid, e["p"]), _page_ink(pid, e["p"], units), _book_scale(pid, units, _page_font(pid, e["p"])))
+                k = manual.replace_page_text(d, units, e["p"], [t for _, t in sorted(paras.items()) if t], _page_obstacles(pid, e["p"]), _page_font(pid, e["p"]), _page_ink(pid, e["p"], units), _book_scale(pid, units, _page_font(pid, e["p"])), _page_lines(pid, e["p"]))
                 if k:
                     done += k
                     touched.add(pos)
