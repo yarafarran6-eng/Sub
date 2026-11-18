@@ -532,7 +532,7 @@ def _wrapped_lines(text, size, width, family=None, indent=0.0):
         return sum(-(-max(len(l), 1) // cpl) for l in text.split("\n"))
 
 
-def replace_page_text(d, units, orig_page, paras, obstacles=(), font=""):
+def replace_page_text(d, units, orig_page, paras, obstacles=(), font="", ink=None):
     """Clean text for a WHOLE page (for files whose text is cut into lines/fragments, so numbered paste cannot match): every original paragraph
     of the page is erased and the new paragraphs flow top to bottom in the page's own text column, with the page's own look: the same
     font/size, the same line spacing, the first-line indent, justified, and the chapter heading centred at its own size."""
@@ -545,8 +545,10 @@ def replace_page_text(d, units, orig_page, paras, obstacles=(), font=""):
     heads = sorted([u for u in pu if u["size"] > body * 1.25], key=lambda u: u["bbox"][1])       # the chapter heading (bigger type)
     rest = [u for u in pu if u not in heads]
     longs = [u for u in rest if len(u["text"]) > 100] or rest or pu
-    x0 = min(u["bbox"][0] for u in longs)
-    x1 = max(u["bbox"][2] for u in longs)
+    ink = ink or {}
+    ib = lambda u: ink.get(u["id"]) or u["bbox"]                                      # what is really seen of the line (not the text layer's box)
+    x0 = min(ib(u)[0] for u in longs)
+    x1 = max(ib(u)[2] for u in longs)
     y0 = min(u["bbox"][1] for u in (rest or pu))
     y1 = max(u["bbox"][3] for u in ([v for v in pu if len(v["text"].strip()) > 3] or pu))   # (a stray mark far below the text does not count)
     size = statistics.median(u["size"] for u in longs)
@@ -557,10 +559,11 @@ def replace_page_text(d, units, orig_page, paras, obstacles=(), font=""):
     gaps = [b - a for a, b in zip(ys, ys[1:]) if size * 1.2 < b - a < size * 2.6]
     pitch = statistics.median(gaps) if len(gaps) >= 3 else statistics.median(u["bbox"][3] - u["bbox"][1] for u in longs)
     pitch = pitch if size * 1.3 < pitch < size * 2.6 else size * 1.75                 # the book's own line spacing
-    drawn = size * 0.94                                                              # the Amiri copy we draw with sets a little wider than the book's own typesetting: 6% smaller gives the same line breaks (the builder adds 4% to right-to-left text, so the box gets drawn/1.04)
+    drawn = size * 0.94
+                                                                 # the Amiri copy we draw with sets a little wider than the book's own typesetting: 6% smaller gives the same line breaks (the builder adds 4% to right-to-left text, so the box gets drawn/1.04)
     lh = pitch / drawn
     size_h = None
-    short = [x1 - u["bbox"][2] for u in rest if 8 < x1 - u["bbox"][2] < 45 and u["size"] < body * 1.25 and len(u["text"]) > 30]
+    short = [x1 - ib(u)[2] for u in rest if 6 < x1 - ib(u)[2] < 45 and u["size"] < body * 1.25 and len(u["text"]) > 30]
     indent = round(statistics.median(short), 1) if len(short) >= 2 else 0.0                       # the first line of a paragraph starts indented
     paras = [t for t in paras if t]
     hp = []                                                                          # the leading short paragraphs are the heading
@@ -575,6 +578,7 @@ def replace_page_text(d, units, orig_page, paras, obstacles=(), font=""):
     from . import builder
     need = [builder.natural_height(t, x1 - x0, drawn, font or None, lh, indent) for t in paras]
     room = (y1 - y0) - sum(min(o[3], y1) - max(o[1], y0) for o in obs)           # the height left once the page's pictures/ornaments are left alone
+    room += pitch * 0.8                                                              # a line or so below the book's last line is still inside the page's margins
     k = min(1.0, room / max(sum(need), 1))                                           # not enough room: the spacing tightens a little
     tx = Tx(d, "لصق نص الصفحة كاملة")
     for u in pu:

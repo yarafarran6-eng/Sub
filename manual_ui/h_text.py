@@ -137,6 +137,33 @@ def _page_obstacles(pid, p):
         return []
 
 
+def _page_ink(pid, p, units):
+    """{unit id: (left, top, right, bottom)} of the real ink of each original line (the text layer's boxes can be wider than what is seen)."""
+    out = {}
+    try:
+        import fitz
+        import numpy as np
+        with fitz.open(manual.source_path(pid)) as doc:
+            pg = doc[p]
+            sc = 2.0
+            pm = pg.get_pixmap(matrix=fitz.Matrix(sc, sc), colorspace=fitz.csGRAY)
+            a = np.frombuffer(pm.samples, dtype=np.uint8).reshape(pm.height, pm.width)
+            bg = int(np.median(a))
+            dark = a < max(40, bg - 70)
+            for u in units:
+                if u["page"] != p:
+                    continue
+                x0, y0, x1, y1 = u["bbox"]
+                l, t, r, b = max(int((x0 - 2) * sc), 0), max(int((y0 - 1) * sc), 0), min(int((x1 + 2) * sc), pm.width), min(int((y1 + 1) * sc), pm.height)
+                sub = dark[t:b, l:r]
+                cols, rows = np.where(sub.any(0))[0], np.where(sub.any(1))[0]
+                if len(cols) and len(rows):
+                    out[u["id"]] = (l / sc + cols[0] / sc, t / sc + rows[0] / sc, l / sc + (cols[-1] + 1) / sc, t / sc + (rows[-1] + 1) / sc)
+    except Exception:
+        return {}
+    return out
+
+
 def _page_font(pid, p):
     """The page's own font, when it is one of the fonts the site has (the book here is set in Amiri)."""
     try:
@@ -172,7 +199,7 @@ def apply_parsed(pid, did, cur, parsed, label, how="file"):
             else:
                 how_p = how
             if how_p == "page":                                # the whole page's text is replaced and laid out again
-                k = manual.replace_page_text(d, units, e["p"], [t for _, t in sorted(paras.items())], _page_obstacles(pid, e["p"]), _page_font(pid, e["p"])) if e["k"] == "o" else 0
+                k = manual.replace_page_text(d, units, e["p"], [t for _, t in sorted(paras.items())], _page_obstacles(pid, e["p"]), _page_font(pid, e["p"]), _page_ink(pid, e["p"], units)) if e["k"] == "o" else 0
                 if k:
                     done += k
                     touched.add(pos)
