@@ -532,7 +532,47 @@ def _wrapped_lines(text, size, width, family=None, indent=0.0):
         return sum(-(-max(len(l), 1) // cpl) for l in text.split("\n"))
 
 
-def replace_page_text(d, units, orig_page, paras, obstacles=(), font="", ink=None):
+def calib_cases(units, page, ink):
+    """(text, lines, column width) of the biggest paragraphs of one page, to find out how big the book's own type is (see calib_ratio)."""
+    import statistics
+    pu = [u for u in units if u["page"] == page and u.get("translate") and ink.get(u["id"])]
+    longs = [u for u in pu if len(u["text"]) > 60]
+    if len(longs) < 2:
+        return []
+    size = statistics.median(u["size"] for u in longs)
+    ys = []
+    for yy in sorted(ink[u["id"]][1] for u in pu):
+        if not ys or yy - ys[-1] > size * 0.6:
+            ys.append(yy)
+    gaps = [b - a for a, b in zip(ys, ys[1:]) if size * 1.2 < b - a < size * 2.6]
+    if len(gaps) < 2:
+        return []
+    pitch = statistics.median(gaps)
+    width = max(ink[u["id"]][2] for u in longs) - min(ink[u["id"]][0] for u in longs)
+    out = []
+    for u in sorted(longs, key=lambda v: -len(v["text"]))[:5]:
+        n = max(1, round((ink[u["id"]][3] - ink[u["id"]][1] - size * 0.9) / pitch) + 1)
+        if n >= 2:
+            out.append((" ".join(u["text"].split()), n, width, size))
+    return out
+
+
+def calib_ratio(cases, font=""):
+    """drawn size / the book's text-layer size: the biggest size at which OUR font still breaks the book's own paragraphs into the same number of lines
+    (the upper edge is sharp, the lower one is soft), a little under it. None when there is too little to go by."""
+    if len(cases) < 8:
+        return None
+    from . import builder
+    grid = [0.80 + 0.02 * i for i in range(18)]
+    hits = [sum(1 for t, n, w, sz in cases if round(builder.natural_height(t, w, sz * g, font or None, 2.0, 0.0) / (2 * sz * g)) == n) for g in grid]
+    top = max(hits)
+    if top < 0.6 * len(cases):
+        return None
+    ok = [g for g, h in zip(grid, hits) if h >= 0.9 * top]
+    return round(max(0.8, min(1.1, max(ok) * 0.96)), 3)
+
+
+def replace_page_text(d, units, orig_page, paras, obstacles=(), font="", ink=None, scale=None):
     """Clean text for a WHOLE page (for files whose text is cut into lines/fragments, so numbered paste cannot match): every original paragraph
     of the page is erased and the new paragraphs flow top to bottom in the page's own text column, with the page's own look: the same
     font/size, the same line spacing, the first-line indent, justified, and the chapter heading centred at its own size."""
@@ -559,7 +599,7 @@ def replace_page_text(d, units, orig_page, paras, obstacles=(), font="", ink=Non
     gaps = [b - a for a, b in zip(ys, ys[1:]) if size * 1.2 < b - a < size * 2.6]
     pitch = statistics.median(gaps) if len(gaps) >= 3 else statistics.median(u["bbox"][3] - u["bbox"][1] for u in longs)
     pitch = pitch if size * 1.3 < pitch < size * 2.6 else size * 1.75                 # the book's own line spacing
-    drawn = size * 0.94
+    drawn = size * (scale or 0.94)
                                                                  # the Amiri copy we draw with sets a little wider than the book's own typesetting: 6% smaller gives the same line breaks (the builder adds 4% to right-to-left text, so the box gets drawn/1.04)
     lh = pitch / drawn
     size_h = None

@@ -164,6 +164,25 @@ def _page_ink(pid, p, units):
     return out
 
 
+_scale_cache = {}
+
+
+def _book_scale(pid, units, font):
+    """How big the book's own type is compared with what its text layer says (measured once per book from a spread of its pages)."""
+    key = (pid, font)
+    if key not in _scale_cache:
+        try:
+            pages = sorted({u["page"] for u in units if len(u["text"]) > 100})
+            pick = [pages[int(i * (len(pages) - 1) / 9)] for i in range(10)] if len(pages) > 10 else pages
+            cases = []
+            for p in dict.fromkeys(pick):
+                cases += manual.calib_cases(units, p, _page_ink(pid, p, units))
+            _scale_cache[key] = manual.calib_ratio(cases, font)
+        except Exception:
+            _scale_cache[key] = None
+    return _scale_cache[key]
+
+
 def _page_font(pid, p):
     """The page's own font, when it is one of the fonts the site has (the book here is set in Amiri)."""
     try:
@@ -199,7 +218,7 @@ def apply_parsed(pid, did, cur, parsed, label, how="file"):
             else:
                 how_p = how
             if how_p == "page":                                # the whole page's text is replaced and laid out again
-                k = manual.replace_page_text(d, units, e["p"], [t for _, t in sorted(paras.items())], _page_obstacles(pid, e["p"]), _page_font(pid, e["p"]), _page_ink(pid, e["p"], units)) if e["k"] == "o" else 0
+                k = manual.replace_page_text(d, units, e["p"], [t for _, t in sorted(paras.items())], _page_obstacles(pid, e["p"]), _page_font(pid, e["p"]), _page_ink(pid, e["p"], units), _book_scale(pid, units, _page_font(pid, e["p"]))) if e["k"] == "o" else 0
                 if k:
                     done += k
                     touched.add(pos)
