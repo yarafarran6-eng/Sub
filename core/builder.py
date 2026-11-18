@@ -327,8 +327,12 @@ def hidden_text(page, paras, family=None):
         h = natural_height(t, x1 - x0, size, family, 1.5, 0.0)
         sp.insert_htmlbox(fitz.Rect(x0, y, x1, min(y + h + 2, H)), "<p style='margin:0'>" + _rich_text(t, fam[0]) + "</p>", css=css, archive=arch, scale_low=1)
         y += h + size * 0.6
-    for xref in sp.get_contents():                                         # every text block gets «3 Tr»: invisible
-        scratch.update_stream(xref, re.sub(rb"\bBT\b", b"BT 3 Tr", scratch.xref_stream(xref)))
+    streams = set(sp.get_contents())
+    streams |= {x for x in range(1, scratch.xref_length()) if scratch.xref_get_key(x, "Subtype")[1] == "/Form"}      # (the text may sit in form objects)
+    for xref in streams:                                                   # every text block gets «3 Tr»: invisible
+        st = scratch.xref_stream(xref)
+        if st and b"BT" in st:
+            scratch.update_stream(xref, re.sub(rb"\bBT\b", b"BT 3 Tr", st))
     page.show_pdf_page(page.rect, scratch, 0, overlay=True)
 
 
