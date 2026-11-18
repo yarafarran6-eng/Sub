@@ -645,6 +645,18 @@ def build_epub(units, tgt, title, out_path):
     return True
 
 
-def build_txt(units, out_path):
-    Path(out_path).write_text("\n\n".join((u.get("tr") or u.get("text", "")) for u in units if u["kind"] == "text"),
-                              encoding="utf-8")
+def build_txt(units, out_path, pages=True):
+    """Plain text of the translation. With page numbers it is written the way the paste box reads it («=== صفحة 5 ===» then «1) paragraph»…,
+    the number being the paragraph's place on the page), so the file can be edited elsewhere and pasted back page by page."""
+    items = [u for u in units if u.get("kind") == "text" and (u.get("tr") or u.get("text", "")).strip()]
+    if not (pages and items and all(isinstance(u.get("page"), int) for u in items)):
+        Path(out_path).write_text("\n\n".join((u.get("tr") or u.get("text", "")) for u in items), encoding="utf-8")
+        return
+    out, cur, n = [], None, 0
+    for u in items:
+        if u["page"] != cur:
+            cur, n = u["page"], 0
+            out.append(f"=== صفحة {cur + 1} ===")
+        n += 1
+        out.append(f"{u.get('n') or n}) " + " ".join((u.get("tr") or u.get("text", "")).split()))
+    Path(out_path).write_text("\n\n".join(out) + "\n", encoding="utf-8")

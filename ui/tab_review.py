@@ -157,12 +157,12 @@ def build():
             b_repl = gr.Button("استبدل")
         rmsg = gr.Markdown()
         step("د", "صدّر الملف النهائي")
-        opt("صيغ التصدير", "PDF يحافظ على شكل الصفحات الأصلية، وEPUB كتاب إلكتروني، وTXT نص عادي.",
+        opt("صيغ التصدير", "PDF يحافظ على شكل الصفحات الأصلية، وEPUB كتاب إلكتروني، وTXT نص بصيغة اللصق (=== صفحة N === ثم 1) 2) …) تعدّله وتستورده من جديد.",
             "تختار الصيغة المناسبة لقراءتك.", "علّم الصيغ المطلوبة ثم اضغط «توليد».")
         with gr.Row():
             c_pdf = gr.Checkbox(True, label="PDF")
             c_epub = gr.Checkbox(True, label="EPUB")
-            c_txt = gr.Checkbox(False, label="TXT")
+            c_txt = gr.Checkbox(True, label="TXT (نفس صيغة اللصق، تقدر تستورده بعد التعديل)")
         b_gen = gr.Button("توليد الملف النهائي", variant="primary")
         out_files = gr.File(show_label=False, file_count="multiple")
     b_load.click(load_review, [rsel, only_flag], [grid, ctx, rinfo, qrep])

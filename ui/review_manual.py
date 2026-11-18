@@ -115,10 +115,10 @@ def generate(pid, did, want_pdf, want_epub, want_txt):
         pages = sorted({e["p"] for e in eff if e["k"] == "o"})
         flow = []
         for p in pages:
-            for it in manual.page_items(units, d, p):
+            for n, it in enumerate(manual.page_items(units, d, p), 1):
                 if it["deleted"]:
                     continue
-                flow.append({"id": it["uid"], "kind": "text", "page": p, "translate": True, "text": it["en"], "tr": it["ar"],
+                flow.append({"id": it["uid"], "kind": "text", "page": p, "translate": True, "text": it["en"], "tr": it["ar"], "n": n,
                              "heading": bool(next((u for u in units if u["id"] == it["uid"]), {}).get("heading"))})
         if want_epub and builder.build_epub(flow, "ar", os.path.splitext(meta["name"])[0], str(out / (base + ".epub"))):
             files.append(str(out / (base + ".epub")))
