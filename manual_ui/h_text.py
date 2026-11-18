@@ -166,8 +166,12 @@ def apply_parsed(pid, did, cur, parsed, label, how="file"):
             if pos is None:
                 missing.append(f"صفحة {page}")
                 continue
-            if how == "page":                                  # the whole page's text is replaced and laid out again
-                e = eff[pos]
+            e = eff[pos]
+            if e["k"] == "o" and how != "page" and any(x["page"] == e["p"] and x.get("repl") for x in d["extra"].values()):
+                how_p = "page"                                 # this page already got a whole-page paste: the new one replaces it (not mixed into it)
+            else:
+                how_p = how
+            if how_p == "page":                                # the whole page's text is replaced and laid out again
                 k = manual.replace_page_text(d, units, e["p"], [t for _, t in sorted(paras.items())], _page_obstacles(pid, e["p"]), _page_font(pid, e["p"])) if e["k"] == "o" else 0
                 if k:
                     done += k

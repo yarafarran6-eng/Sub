@@ -550,8 +550,13 @@ def replace_page_text(d, units, orig_page, paras, obstacles=(), font=""):
     y0 = min(u["bbox"][1] for u in (rest or pu))
     y1 = max(u["bbox"][3] for u in pu)
     size = statistics.median(u["size"] for u in longs)
-    pitch = statistics.median(u["bbox"][3] - u["bbox"][1] for u in longs)
-    pitch = pitch if size * 1.3 < pitch < size * 2.4 else size * 1.75                 # the book's own line spacing
+    ys = []                                                                          # the rows of text (tops of the lines), the real line spacing is the distance between them
+    for yy in sorted(u["bbox"][1] for u in rest or pu):
+        if not ys or yy - ys[-1] > size * 0.6:
+            ys.append(yy)
+    gaps = [b - a for a, b in zip(ys, ys[1:]) if size * 1.2 < b - a < size * 2.6]
+    pitch = statistics.median(gaps) if len(gaps) >= 3 else statistics.median(u["bbox"][3] - u["bbox"][1] for u in longs)
+    pitch = pitch if size * 1.3 < pitch < size * 2.6 else size * 1.75                 # the book's own line spacing
     drawn = size * 0.94                                                              # the Amiri copy we draw with sets a little wider than the book's own typesetting: 6% smaller gives the same line breaks (the builder adds 4% to right-to-left text, so the box gets drawn/1.04)
     lh = pitch / drawn
     size_h = None
@@ -586,7 +591,13 @@ def replace_page_text(d, units, orig_page, paras, obstacles=(), font=""):
             bands.append([0, top, 9999, o[1] - 1])
         top = max(top, o[3] + 1)
     bands.append([0, top, 9999, y1 + 36])
-    lead_bold = bool(rest) and bool(sorted(rest, key=lambda u: u['bbox'][1])[0].get('bold'))
+    first_row = [u for u in rest if u["bbox"][1] < y0 + size * 0.6]                  # the first row of text under the heading (a date/place line, often bold and centred)
+    lead_bold = bool(first_row) and bool(sorted(first_row, key=lambda u: u['bbox'][0])[0].get('bold'))
+    lead_w = (max(u["bbox"][2] for u in first_row) - min(u["bbox"][0] for u in first_row)) if first_row else 0
+    lead_c = ((max(u["bbox"][2] for u in first_row) + min(u["bbox"][0] for u in first_row)) / 2) if first_row else 0
+    lead_center = bool(first_row) and lead_w < (x1 - x0) * 0.92 and abs(lead_c - (x0 + x1) / 2) < (x1 - x0) * 0.04
+    after = [u["bbox"][1] for u in rest if u["bbox"][1] > y0 + size * 0.9]
+    body_top = min(after) if after else None                                          # where the first real paragraph starts: the gap under the lead line is kept
     first = True
 
     def add(t, box, **kw):
@@ -614,8 +625,13 @@ def replace_page_text(d, units, orig_page, paras, obstacles=(), font=""):
         for o in obs:                                          # never on top of a picture / ornament that stays on the page
             if y < o[3] and y + h > o[1]:
                 y = o[3] + 2
-        add(t, [x0, y, x1, y + h], align_ov="justify", lh=round(lh, 3), indent=indent, **({"bold": True} if i == 0 and lead_bold and len(t) <= 120 else {}))
-        y += h
+        lead = i == 0 and len(t) <= 120 and (lead_bold or lead_center)
+        if lead:
+            add(t, [x0, y, x1, y + h], align_ov="center" if lead_center else "justify", lh=round(lh, 3), indent=0 if lead_center else indent, **({"bold": True} if lead_bold else {}))
+            y = max(y + h, body_top or 0)
+        else:
+            add(t, [x0, y, x1, y + h], align_ov="justify", lh=round(lh, 3), indent=indent)
+            y += h
     tx.commit()
     return len(paras) + len(hp)
 
