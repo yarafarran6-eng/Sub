@@ -202,6 +202,7 @@ def _page_font(pid, p):
 def apply_parsed(pid, did, cur, parsed, label, how="file"):
     """Writes parsed {page or None: {number: text}} into the paragraphs in ONE undo step. -> (paragraphs written, what was not found, pages touched)."""
     done, missing, touched = 0, [], set()
+    relaid = []
     with manual._lock:
         meta, units, d = load_all(pid, did)
         eff = manual.effective_plan(d)
@@ -226,6 +227,16 @@ def apply_parsed(pid, did, cur, parsed, label, how="file"):
                     missing.append(f"صفحة {page or pos + 1} (ما فيها نص أصلي)")
                 continue
             items = cur_items(units, d, eff, pos)[1]
+            holes = [i for i, it in enumerate(items, 1) if not it["deleted"] and it.get("en", "").strip() and not (it.get("ar") or "").strip() and not paras.get(i)]
+            if holes and e["k"] == "o" and how == "file" and any(paras.values()):
+                # the file's paragraphs do not line up with the page's: some paragraphs of the page would stay EMPTY (a hole in the page).
+                # The whole page is laid out again from the pasted text instead.
+                k = manual.replace_page_text(d, units, e["p"], [t for _, t in sorted(paras.items()) if t], _page_obstacles(pid, e["p"]), _page_font(pid, e["p"]), _page_ink(pid, e["p"], units), _book_scale(pid, units, _page_font(pid, e["p"])))
+                if k:
+                    done += k
+                    touched.add(pos)
+                    relaid.append(page or pos + 1)
+                    continue
             for n, t in paras.items():
                 if 1 <= n <= len(items) and not items[n - 1]["deleted"] and t:
                     tx.set("tr", items[n - 1]["uid"], value=t)
@@ -235,6 +246,8 @@ def apply_parsed(pid, did, cur, parsed, label, how="file"):
                     missing.append(f"فقرة {n}" + (f" بصفحة {page}" if page else ""))
         tx.commit()
         manual.save_draft(pid, d)
+    if relaid:
+        missing.insert(0, "(صفحات رتّبتها من جديد لأن فقراتها ما طابقت أرقام الملف: " + "، ".join(str(x) for x in relaid[:12]) + ")")
     return done, missing, touched
 
 
