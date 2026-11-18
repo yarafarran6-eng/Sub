@@ -305,6 +305,33 @@ def _apply_page(doc, pno, us, obstacles, tgt, default_family=None, bg=None, bedi
     return shrunk
 
 
+def hidden_text(page, paras, family=None):
+    """Puts the paragraphs on a page as text that is not drawn (render mode 3), top to bottom inside the page margins: what is seen stays the
+    picture, but the words can be selected, searched and copied like on the other pages."""
+    import re
+    import fitz
+    W, H = page.rect.width, page.rect.height
+    x0, x1, y0, y1 = W * 0.1, W * 0.9, H * 0.07, H * 0.93
+    size = 14.0
+    while size > 5 and sum(natural_height(t, x1 - x0, size, family, 1.5, 0.0) + size * 0.6 for t in paras) > y1 - y0:
+        size -= 1
+    fam = font_families().get(family or DEFAULT_FAMILY) or font_families().get(DEFAULT_FAMILY)
+    arch = fitz.Archive(str(FONTS))
+    css = (f"@font-face{{font-family:'AR';src:url('{fam[0]}');}}@font-face{{font-family:'AR';font-weight:bold;src:url('{fam[1]}');}}"
+           "@font-face{font-family:'LAT';src:url('NotoSans-Regular.ttf');}@font-face{font-family:'LAT';font-weight:bold;src:url('NotoSans-Bold.ttf');}.fb{font-family:'LAT';}"
+           f"body{{font-family:'AR';font-size:{size}pt;text-align:justify;direction:rtl;margin:0;line-height:1.5;}}")
+    scratch = fitz.open()
+    sp = scratch.new_page(width=W, height=H)
+    y = y0
+    for t in paras:
+        h = natural_height(t, x1 - x0, size, family, 1.5, 0.0)
+        sp.insert_htmlbox(fitz.Rect(x0, y, x1, min(y + h + 2, H)), "<p style='margin:0'>" + _rich_text(t, fam[0]) + "</p>", css=css, archive=arch, scale_low=1)
+        y += h + size * 0.6
+    for xref in sp.get_contents():                                         # every text block gets «3 Tr»: invisible
+        scratch.update_stream(xref, re.sub(rb"\bBT\b", b"BT 3 Tr", scratch.xref_stream(xref)))
+    page.show_pdf_page(page.rect, scratch, 0, overlay=True)
+
+
 def natural_height(text, width, size, family=None, lh=1.3, indent=0.0, bold=False):
     """The real height the builder needs for this text in a column of this width at this size (right-to-left, justified)."""
     import fitz
@@ -533,6 +560,11 @@ def build_plan_pdf(src_pdf, entries, units, tgt, out_path=None, font=None, page_
             ex = fitz.open(str(_P(base_dir) / e["f"]))
             out.insert_pdf(ex, from_page=0, to_page=0)
             last_size = (out[-1].rect.width, out[-1].rect.height)
+            if e.get("paras"):                   # the page is a picture: its text goes in as an invisible layer, so it can be selected and searched
+                try:
+                    hidden_text(out[-1], e["paras"], font)
+                except Exception:
+                    pass
         elif e["k"] == "t":                      # a white page that only carries a pasted translation (paragraphs flow onto more pages if needed)
             W, H = last_size
             size, pg, y, cur_u = 13, None, 50, []

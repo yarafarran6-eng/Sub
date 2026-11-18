@@ -366,11 +366,31 @@ def reset_all(d):
 
 
 # ----------------------------------------------------------------------------- the page plan
+def _op_of(plan, i):
+    """The page of the book that an imported page stands in for: stored when the page was replaced, or (for pages replaced before that was
+    stored) worked out when exactly one book page is missing between its neighbours."""
+    e = plan[i]
+    if e.get("op") is not None:
+        return e["op"]
+    if e["k"] != "e":
+        return None
+    prev = next((plan[j]["p"] for j in range(i - 1, -1, -1) if plan[j]["k"] == "o"), None)
+    nxt = next((plan[j]["p"] for j in range(i + 1, len(plan)) if plan[j]["k"] == "o"), None)
+    if prev is None or nxt is None or nxt - prev != 2:
+        return None
+    between = [j for j in range(plan.index(next(x for x in plan if x["k"] == "o" and x["p"] == prev)) + 1, plan.index(next(x for x in plan if x["k"] == "o" and x["p"] == nxt))) if plan[j]["k"] != "o"]
+    return prev + 1 if between == [i] else None
+
+
 def effective_plan(d):
     """The pages of the output file in order. tr_on says whether the page is translated (inside the chosen range)."""
     r, out = d["range"], []
-    for e in d["plan"]:
+    for i, e in enumerate(d["plan"]):
         e = dict(e)
+        if e["k"] == "e":
+            op = _op_of(d["plan"], i)
+            if op is not None:
+                e["op"] = op
         if e["k"] == "o":
             inside = (not r["on"]) or (r["a"] - 1 <= e["p"] <= r["b"] - 1)
             if not inside and r["outside"] == "delete":
@@ -388,13 +408,15 @@ def _plan_edit(d, label, new_plan):
 
 def plan_delete(d, eff_pos):
     entry = effective_plan(d)[eff_pos]
-    plan = [e for e in d["plan"] if e != {k: v for k, v in entry.items() if k != "tr_on"}]
+    i = _plan_index(d, entry)
+    plan = d["plan"][:i] + d["plan"][i + 1:]
     return _plan_edit(d, "حذف صفحة", plan)
 
 
 def _plan_index(d, entry):
-    base = {k: v for k, v in entry.items() if k != "tr_on"}
-    return d["plan"].index(base)
+    strip = lambda x: {k: v for k, v in x.items() if k not in ("tr_on", "op")}      # (op may have been worked out, not stored)
+    base = strip(entry)
+    return next(j for j, x in enumerate(d["plan"]) if strip(x) == base)
 
 
 def plan_move(d, eff_from, eff_to):
@@ -407,7 +429,8 @@ def plan_move(d, eff_from, eff_to):
     anchor = eff[eff_to] if eff_to != eff_from else None
     if anchor is None:
         return False
-    idx = plan.index({k: v for k, v in anchor.items() if k != "tr_on"})
+    strip = lambda x: {k: v for k, v in x.items() if k not in ("tr_on", "op")}
+    idx = next(j for j, x in enumerate(plan) if strip(x) == strip(anchor))
     plan.insert(idx + (1 if eff_to > eff_from else 0), e)
     return _plan_edit(d, "نقل صفحة", plan)
 
@@ -431,10 +454,30 @@ def plan_insert(d, eff_pos, entry, where="after", replace=False):
     else:
         i = _plan_index(d, eff[max(0, min(eff_pos, len(eff) - 1))])
         if replace:
+            old = plan[i]
+            if entry.get("k") == "e":                                                # the picture stands in for that page of the book: its text (pasted later) belongs to it
+                op = old.get("p") if old["k"] == "o" else _op_of(plan, i)
+                if op is not None:
+                    entry = dict(entry, op=op)
+                if old.get("paras"):
+                    entry["paras"] = old["paras"]
             plan[i] = entry
         else:
             plan.insert(i + (1 if where == "after" else 0), entry)
     return _plan_edit(d, "استبدال صفحة" if replace else "إضافة صفحة", plan)
+
+
+def set_ext_paras(d, tx, entry, paras):
+    """The text of a page that was replaced by a picture: it is kept with the page (text you can select in the PDF, and it goes to the TXT/EPUB)."""
+    i = _plan_index(d, entry)
+    plan = list(d["plan"])
+    new = {k: v for k, v in plan[i].items() if k != "paras"}
+    if entry.get("op") is not None:
+        new["op"] = entry["op"]
+    if paras:
+        new["paras"] = list(paras)
+    plan[i] = new
+    tx.set("plan", value=plan)
 
 
 def import_page(pid, path, page_no=1, size=None):

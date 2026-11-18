@@ -209,11 +209,18 @@ def apply_parsed(pid, did, cur, parsed, label, how="file"):
         from core.manual import Tx
         tx = Tx(d, label)
         for page, paras in parsed.items():
-            pos = int(cur) if page is None else next((i for i, e in enumerate(eff) if e["k"] == "o" and e["p"] == page - 1), None)
+            pos = int(cur) if page is None else next((i for i, e in enumerate(eff) if (e["k"] == "o" and e["p"] == page - 1) or (e["k"] == "e" and e.get("op") == page - 1)), None)
             if pos is None:
                 missing.append(f"صفحة {page}")
                 continue
             e = eff[pos]
+            if e["k"] == "e":                                  # a page replaced by a picture: the text is kept with it (selectable in the PDF, goes to TXT/EPUB)
+                lst = [t for _, t in sorted(paras.items()) if t]
+                if lst:
+                    manual.set_ext_paras(d, tx, e, lst)
+                    done += len(lst)
+                    touched.add(pos)
+                continue
             if e["k"] == "o" and how != "page" and any(x["page"] == e["p"] and x.get("repl") for x in d["extra"].values()):
                 how_p = "page"                                 # this page already got a whole-page paste: the new one replaces it (not mixed into it)
             else:
