@@ -112,15 +112,12 @@ def generate(pid, did, want_pdf, want_epub, want_txt):
         files.append(str(out / (base + ".pdf")))
         notes.append(f"PDF: {info['pages']} صفحة")
     if want_epub or want_txt:
-        pages = sorted({e["p"] for e in eff if e["k"] == "o"} | {e["op"] for e in eff if e["k"] == "e" and e.get("op") is not None and e.get("paras")})
-        picture_text = {e["op"]: e["paras"] for e in eff if e["k"] == "e" and e.get("op") is not None and e.get("paras")}
+        pages = sorted({e["p"] for e in eff if e["k"] == "o"} | {e["op"] for e in eff if e["k"] == "e" and e.get("op") is not None
+                                                             and any(x["page"] == e["op"] and x.get("pic") for x in d["extra"].values())})
         flow = []
         for p in pages:
-            if p in picture_text and not any(e["k"] == "o" and e["p"] == p for e in eff):       # the page is a picture that carries its pasted text
-                for n, t in enumerate(picture_text[p], 1):
-                    flow.append({"id": f"P{p}_{n}", "kind": "text", "page": p, "translate": True, "text": "", "tr": t, "n": n})
-                continue
-            for n, it in enumerate(manual.page_items(units, d, p), 1):
+            only_pic = not any(e["k"] == "o" and e["p"] == p for e in eff)          # the page is a picture now: only its own pasted text
+            for n, it in enumerate([x for x in manual.page_items(units, d, p) if x["custom"] or not only_pic], 1):
                 if it["deleted"]:
                     continue
                 flow.append({"id": it["uid"], "kind": "text", "page": p, "translate": True, "text": it["en"], "tr": it["ar"], "n": n,

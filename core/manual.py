@@ -459,25 +459,23 @@ def plan_insert(d, eff_pos, entry, where="after", replace=False):
                 op = old.get("p") if old["k"] == "o" else _op_of(plan, i)
                 if op is not None:
                     entry = dict(entry, op=op)
-                if old.get("paras"):
-                    entry["paras"] = old["paras"]
             plan[i] = entry
         else:
             plan.insert(i + (1 if where == "after" else 0), entry)
     return _plan_edit(d, "استبدال صفحة" if replace else "إضافة صفحة", plan)
 
 
-def set_ext_paras(d, tx, entry, paras):
-    """The text of a page that was replaced by a picture: it is kept with the page (text you can select in the PDF, and it goes to the TXT/EPUB)."""
-    i = _plan_index(d, entry)
-    plan = list(d["plan"])
-    new = {k: v for k, v in plan[i].items() if k != "paras"}
-    if entry.get("op") is not None:
-        new["op"] = entry["op"]
-    if paras:
-        new["paras"] = list(paras)
-    plan[i] = new
-    tx.set("plan", value=plan)
+def set_pic_paras(d, tx, op, paras):
+    """The text of a page that was replaced by a picture: real paragraphs of that page (you can edit them like any other), kept hidden under the picture."""
+    for xid, x in list(d["extra"].items()):
+        if x["page"] == op and x.get("pic"):
+            tx.set("extra", xid, value=MISSING)
+            tx.set("tr", xid, value=MISSING)
+    for i, t in enumerate(paras):
+        xid = "X_" + uuid.uuid4().hex[:5]
+        tx.set("extra", xid, value={"id": xid, "kind": "text", "translate": True, "custom": True, "page": op, "after": "", "pic": True,
+                                    "bbox": [50.0, 50.0 + i * 30.0, 540.0, 78.0 + i * 30.0], "text": "", "size": 12.0, "bold": False, "color": 0, "align": "left"})
+        tx.set("tr", xid, value=t)
 
 
 def import_page(pid, path, page_no=1, size=None):

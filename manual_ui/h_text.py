@@ -224,10 +224,11 @@ def apply_parsed(pid, did, cur, parsed, label, how="file"):
                 missing.append(f"صفحة {page}")
                 continue
             e = eff[pos]
-            if e["k"] == "e":                                  # a page replaced by a picture: the text is kept with it (selectable in the PDF, goes to TXT/EPUB)
+            if e["k"] == "e":                                  # a page replaced by a picture: the text is kept with it as editable paragraphs (hidden under the picture)
                 lst = [t for _, t in sorted(paras.items()) if t]
-                if lst:
-                    manual.set_ext_paras(d, tx, e, lst)
+                if lst and e.get("op") is not None:
+                    tx_pic = tx
+                    manual.set_pic_paras(d, tx_pic, e["op"], lst)
                     done += len(lst)
                     touched.add(pos)
                 continue

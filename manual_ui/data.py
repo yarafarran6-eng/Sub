@@ -31,6 +31,8 @@ def cur_items(units, d, eff, pos):
     e = eff[pos] if eff and 0 <= pos < len(eff) else None
     if e and e["k"] == "o" and e.get("tr_on"):
         return e, manual.page_items(units, d, e["p"])
+    if e and e["k"] == "e" and e.get("op") is not None:           # a page replaced by a picture: its pasted text is editable here
+        return e, [it for it in manual.page_items(units, d, e["op"]) if it["custom"]]
     return e, []
 
 

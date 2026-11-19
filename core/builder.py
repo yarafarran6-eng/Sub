@@ -550,6 +550,11 @@ def build_plan_pdf(src_pdf, entries, units, tgt, out_path=None, font=None, page_
     import fitz
     from pathlib import Path as _P
     src, out = fitz.open(src_pdf), fitz.open()
+    pic = {}
+    for u in units:                                                          # the text of pages replaced by a picture: not drawn, only put under the picture
+        if u.get("pic") and u.get("tr") and not u.get("remove"):
+            pic.setdefault(u["page"], []).append(u)
+    units = [u for u in units if not u.get("pic")]
     by_page, all_on_page = _units_by_page(units)
     todo, last_size = [], (595, 842)
     positions = [only_pos] if only_pos is not None else range(len(entries))
@@ -564,9 +569,9 @@ def build_plan_pdf(src_pdf, entries, units, tgt, out_path=None, font=None, page_
             ex = fitz.open(str(_P(base_dir) / e["f"]))
             out.insert_pdf(ex, from_page=0, to_page=0)
             last_size = (out[-1].rect.width, out[-1].rect.height)
-            if e.get("paras"):                   # the page is a picture: its text goes in as an invisible layer, so it can be selected and searched
+            if e.get("op") is not None and pic.get(e["op"]):     # the page is a picture: its text goes in as an invisible layer, so it can be selected and searched
                 try:
-                    hidden_text(out[-1], e["paras"], font)
+                    hidden_text(out[-1], [u["tr"] for u in sorted(pic[e["op"]], key=lambda u: (round(u["bbox"][1]), u["id"]))], font)
                 except Exception:
                     pass
         elif e["k"] == "t":                      # a white page that only carries a pasted translation (paragraphs flow onto more pages if needed)
