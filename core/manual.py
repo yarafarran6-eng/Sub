@@ -710,8 +710,19 @@ def replace_page_text(d, units, orig_page, paras, obstacles=(), font="", ink=Non
         us = rows[r]
         rx0, rx1 = min(ib(u)[0] for u in us), max(ib(u)[2] for u in us)
         txt_len = sum(len(u["text"].strip()) for u in us)
-        if 3 < txt_len <= 90 and (rx1 - rx0) < cw * 0.8 and abs((rx0 + rx1) / 2 - cc) < cw * 0.05 and x1 - rx1 > 40 and not (lead_center and min(u["bbox"][1] for u in us) < y0 + size * 0.6):
-            crows.append([min(u["bbox"][1] for u in us), max(u["bbox"][3] for u in us), any(u.get("bold") for u in us)])
+        if not (3 < txt_len <= 90) or (lead_center and min(u["bbox"][1] for u in us) < y0 + size * 0.6):
+            continue
+        bold = any(u.get("bold") for u in us)
+        big = statistics.median(u["size"] for u in us) / size
+        if (rx1 - rx0) < cw * 0.8 and abs((rx0 + rx1) / 2 - cc) < cw * 0.05 and x1 - rx1 > 40:
+            al = "center"
+        elif (rx1 - rx0) < cw * 0.8 and rx0 - x0 < 8 and x1 - rx1 > 40:
+            al = "left"                                    # a line that sits at the left edge (a signature, a note)
+        elif bold or abs(big - 1) > 0.08:
+            al = "right"                                   # a bold / different-size line at the usual edge (a sub-heading)
+        else:
+            continue
+        crows.append([min(u["bbox"][1] for u in us), max(u["bbox"][3] for u in us), bold, al, big if abs(big - 1) > 0.08 else 1.0])
     first = True
 
     def add(t, box, **kw):
@@ -750,7 +761,7 @@ def replace_page_text(d, units, orig_page, paras, obstacles=(), font="", ink=Non
             if cr:                                             # a line that was centred in the book stays centred, at its own height, with the gap the book left after it
                 crows.remove(cr)
                 y = max(y, cr[0])
-                add(t, [x0, y, x1, y + h], align_ov="center", lh=round(lh, 3), indent=0, **({"bold": True} if cr[2] else {}))
+                add(t, [x0, y, x1, y + h], align_ov=cr[3], lh=round(lh, 3), indent=0, **({"bold": True} if cr[2] else {}), **({"size": drawn * cr[4]} if cr[4] != 1.0 else {}))
                 nxt = min((u["bbox"][1] for u in rest if u["bbox"][1] > cr[1] + 1), default=0)
                 y = max(y + h, nxt)
                 continue
