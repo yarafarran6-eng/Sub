@@ -627,7 +627,10 @@ def calib_ratio(cases, font=""):
     return round(max(0.8, min(1.1, max(ok) * 0.96)), 3)
 
 
-def replace_page_text(d, units, orig_page, paras, obstacles=(), font="", ink=None, scale=None, lines=()):
+LAYOUT_VER = 1      # raise it whenever replace_page_text lays pages out better: «update old pages» then redoes the pages laid out by an older version
+
+
+def replace_page_text(d, units, orig_page, paras, obstacles=(), font="", ink=None, scale=None, lines=(), tx=None):
     """Clean text for a WHOLE page (for files whose text is cut into lines/fragments, so numbered paste cannot match): every original paragraph
     of the page is erased and the new paragraphs flow top to bottom in the page's own text column, with the page's own look: the same
     font/size, the same line spacing, the first-line indent, justified, and the chapter heading centred at its own size."""
@@ -679,7 +682,10 @@ def replace_page_text(d, units, orig_page, paras, obstacles=(), font="", ink=Non
     room = (y1 - y0) - sum(min(o[3], y1) - max(o[1], y0) for o in obs)           # the height left once the page's pictures/ornaments are left alone
     room += pitch * 0.8                                                              # a line or so below the book's last line is still inside the page's margins
     k = min(1.0, room / max(sum(need), 1))                                           # not enough room: the spacing tightens a little
-    tx = Tx(d, "لصق نص الصفحة كاملة")
+    own = tx is None
+    tx = tx or Tx(d, "لصق نص الصفحة كاملة")
+    d.setdefault("lay", {})
+    tx.set("lay", str(orig_page), value=LAYOUT_VER)
     for u in pu:
         tx.set("deleted", u["id"], value=True)
     for xid, x in list(d["extra"].items()):                   # a previous paste on this page is replaced
@@ -767,7 +773,8 @@ def replace_page_text(d, units, orig_page, paras, obstacles=(), font="", ink=Non
                 continue
             add(t, [x0, y, x1, y + h], align_ov="justify", lh=round(lh, 3), indent=0 if (i == 0 and cont) else indent)
             y += h
-    tx.commit()
+    if own:
+        tx.commit()
     return len(paras) + len(hp)
 
 

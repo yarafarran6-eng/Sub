@@ -173,7 +173,7 @@ def build():
         put("b_pv_prev", gr.Button("◀ معاينة السابقة"))
         put("b_pv_cur", gr.Button("👁 حدّث معاينة هذي الصفحة", variant="primary"))
         put("b_pv_next", gr.Button("معاينة التالية ▶"))
-    put("b_fixpg", gr.Button("🔧 أصلح تنسيق هذي الصفحة (يرتّب نصها من جديد بتنسيق الأصل)", size="sm"))
+    put("b_fixpg", gr.Button("🔄 حدّث هذي الصفحة بآخر إصلاحات الترتيب (للصفحات اللي انلصقت قبل)", size="sm"))
     put("pv_info", gr.Markdown())
     put("pv_img", gr.Image(show_label=False, type="filepath", interactive=False, elem_id="pv_img"))
     with gr.Accordion("➕ إضافة فقرة جديدة في هذي الصفحة", open=False):

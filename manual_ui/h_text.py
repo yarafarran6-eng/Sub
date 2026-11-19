@@ -646,18 +646,51 @@ def add_para(pid, did, cur, grp, after_n):
     return view(pid, did, cur, grp, "➕ أُضيفت فقرة جديدة. اكتب نصها، وحرّك مكانها من اللوحة الجانبية.")
 
 
+def _relay_all(pid, did, only=None):
+    """The pages laid out by an OLDER version of the layout code (pasted whole-page text) are laid out again from the text they have now, in ONE undo step.
+    A page you tuned by hand (moved, resized, coloured, highlighted) is left alone and reported. -> (pages redone, pages skipped, pages not touched)."""
+    redone, skipped = 0, []
+    with manual._lock:
+        meta, units, d = load_all(pid, did)
+        eff = manual.effective_plan(d)
+        tx = manual.Tx(d, "تحديث الصفحات القديمة")
+        for pos, e in enumerate(eff):
+            if e["k"] != "o" or not e.get("tr_on") or (only is not None and pos != only):
+                continue
+            ex = [x for x in d["extra"].values() if x["page"] == e["p"] and x.get("repl")]
+            if not ex or (only is None and d.get("lay", {}).get(str(e["p"]), 0) >= manual.LAYOUT_VER):
+                continue
+            if only is None and any(d["ustyle"].get(x["id"]) for x in ex):
+                skipped.append(e["p"] + 1)
+                continue
+            texts = [it["ar"].strip() for it in manual.page_items(units, d, e["p"]) if not it["deleted"] and (it["ar"] or "").strip()]
+            if not texts:
+                continue
+            if manual.replace_page_text(d, units, e["p"], texts, _page_obstacles(pid, e["p"]), _page_font(pid, e["p"]), _page_ink(pid, e["p"], units),
+                                        _book_scale(pid, units, _page_font(pid, e["p"])), _page_lines(pid, e["p"]), tx=tx):
+                redone += 1
+        tx.commit()
+        manual.save_draft(pid, d)
+    return redone, skipped
+
+
 @safe
 def fix_page(pid, did, cur, grp):
-    """For a page that was pasted with an older build (or looks wrong): the text it has NOW is laid out again from scratch with the page's own formatting. No word changes."""
+    """This page only: its text is laid out again with the latest layout code (for a page pasted with an older version)."""
     guard()
     need(pid)
-    with manual._lock:
-        meta, units, d, eff, allit, items = items_now(pid, did, cur, grp)
-        e = eff[int(cur)] if 0 <= int(cur) < len(eff) else None
-    if not e or e["k"] != "o" or not e.get("tr_on"):
-        raise gr.Error("الإصلاح للصفحات المترجمة فقط (مو الصفحات المستبدلة بصورة)", title="لا يمكن")
-    texts = {i: it["ar"].strip() for i, it in enumerate([it for it in allit if not it["deleted"] and (it["ar"] or "").strip()], 1)}
-    if not texts:
-        raise gr.Error("ما فيه نص مترجم في هذي الصفحة أصلحه. الصق نصها أو ترجمها أول.", title="لا يوجد نص")
-    done, missing, _ = apply_parsed(pid, did, cur, {None: texts}, "إصلاح تنسيق الصفحة", "page")
-    return view(pid, did, cur, grp, f"🔧 رتّبت نص هذي الصفحة من جديد ({done} فقرة) بتنسيق الأصل. تقدر تتراجع." if done else "⚠ ما قدرت أرتّب هذي الصفحة (ما فيها نص أصلي).")
+    redone, _ = _relay_all(pid, did, only=int(cur))
+    return view(pid, did, cur, grp, "🔄 حدّثت هذي الصفحة بآخر إصلاحات الترتيب. تقدر تتراجع." if redone else
+                "ما فيه ما أحدّثه: هذي الصفحة ما انلصق نصها كصفحة كاملة (أو ما فيها نص). الصق نصها من جديد بخيار «الصفحة كاملة».")
+
+
+@safe
+def fix_all(pid, did, cur, grp):
+    """Every old page at once (only the ones an older layout version made, and only the ones you did not tune by hand)."""
+    guard()
+    need(pid)
+    redone, skipped = _relay_all(pid, did)
+    msg = f"🔄 حدّثت {redone} صفحة قديمة بآخر الإصلاحات (خطوة تراجع وحدة)." if redone else "كل الصفحات محدّثة أصلاً، ما فيه ما أحدّثه."
+    if skipped:
+        msg += " تركت صفحات عدّلت تنسيقها بيدك: " + "، ".join(str(x) for x in skipped[:15]) + " (استخدم «حدّث هذي الصفحة» فيها لو تبي)."
+    return view(pid, did, cur, grp, msg)

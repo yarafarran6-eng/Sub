@@ -23,6 +23,7 @@ def build():
         with gr.Row():
             put("b_undo", gr.Button("↩ تراجع عن آخر تغيير (أي صفحة)", size="sm"))
             put("b_resetall", gr.Button("⟲ أعد المسودة كلها للبداية", size="sm"))
+        put("b_fixall", gr.Button("🔄 حدّث الصفحات القديمة بآخر إصلاحات الترتيب (الملف كله)", size="sm"))
         danger("resetall", "نعم، متأكد، احذف كل التعديلات")
         with gr.Row():
             put("last", gr.Markdown("لا توجد تغييرات للتراجع عنها"))
@@ -118,6 +119,7 @@ def _wire(tabs):
     P(F(C["b_ocr_page"].click(LONG(h_text.ocr_page), S, None, concurrency_id="ai")))
     P(C["b_add"].click(h_text.add_para, S + [C["add_after"]], ALL))
     P(C["b_fixpg"].click(h_text.fix_page, S, ALL))
+    P(C["b_fixall"].click(h_text.fix_all, S, ALL))
     C["style"].blur(h_text.ai_cfg, [C["pid"], C["did"], C["ctx"], C["style"]], C["saved"])
     C["ctx"].blur(h_text.ai_cfg, [C["pid"], C["did"], C["ctx"], C["style"]], C["saved"])
     C["b_ctx"].click(h_text.ai_ctx, [C["pid"], C["did"]], C["ctx"])
