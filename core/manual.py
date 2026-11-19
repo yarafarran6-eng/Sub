@@ -701,6 +701,17 @@ def replace_page_text(d, units, orig_page, paras, obstacles=(), font="", ink=Non
     lead_center = bool(first_row) and lead_w < (x1 - x0) * 0.92 and abs(lead_c - (x0 + x1) / 2) < (x1 - x0) * 0.04
     after = [u["bbox"][1] for u in rest if u["bbox"][1] > y0 + size * 0.9]
     body_top = min(after) if after else None                                          # where the first real paragraph starts: the gap under the lead line is kept
+    crows = []                                           # short lines of the original that sit in the MIDDLE of the column (a date/place line, a scene mark): centred again
+    cw, cc = x1 - x0, (x0 + x1) / 2
+    rows = {}
+    for u in rest:
+        rows.setdefault(round(u["bbox"][1] / (size * 0.7)), []).append(u)
+    for r in sorted(rows):
+        us = rows[r]
+        rx0, rx1 = min(ib(u)[0] for u in us), max(ib(u)[2] for u in us)
+        txt_len = sum(len(u["text"].strip()) for u in us)
+        if 3 < txt_len <= 90 and (rx1 - rx0) < cw * 0.8 and abs((rx0 + rx1) / 2 - cc) < cw * 0.05 and x1 - rx1 > 40 and not (lead_center and min(u["bbox"][1] for u in us) < y0 + size * 0.6):
+            crows.append([min(u["bbox"][1] for u in us), max(u["bbox"][3] for u in us), any(u.get("bold") for u in us)])
     first = True
 
     def add(t, box, **kw):
@@ -735,6 +746,14 @@ def replace_page_text(d, units, orig_page, paras, obstacles=(), font="", ink=Non
             add(t, [x0, y, x1, y + h], align_ov="center" if lead_center else "justify", lh=round(lh, 3), indent=0 if lead_center else indent, **({"bold": True} if lead_bold else {}))
             y = max(y + h, body_top or 0)
         else:
+            cr = next((c for c in crows if len(t) <= 90 and abs(c[0] - y) < pitch * 2.6), None) if crows else None
+            if cr:                                             # a line that was centred in the book stays centred, at its own height, with the gap the book left after it
+                crows.remove(cr)
+                y = max(y, cr[0])
+                add(t, [x0, y, x1, y + h], align_ov="center", lh=round(lh, 3), indent=0, **({"bold": True} if cr[2] else {}))
+                nxt = min((u["bbox"][1] for u in rest if u["bbox"][1] > cr[1] + 1), default=0)
+                y = max(y + h, nxt)
+                continue
             add(t, [x0, y, x1, y + h], align_ov="justify", lh=round(lh, 3), indent=0 if (i == 0 and cont) else indent)
             y += h
     tx.commit()
