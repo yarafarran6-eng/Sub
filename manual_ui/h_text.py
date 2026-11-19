@@ -644,3 +644,20 @@ def add_para(pid, did, cur, grp, after_n):
         manual.new_extra(d, units, p, allit[n - 1]["uid"] if 1 <= n <= len(allit) else "")
         manual.save_draft(pid, d)
     return view(pid, did, cur, grp, "➕ أُضيفت فقرة جديدة. اكتب نصها، وحرّك مكانها من اللوحة الجانبية.")
+
+
+@safe
+def fix_page(pid, did, cur, grp):
+    """For a page that was pasted with an older build (or looks wrong): the text it has NOW is laid out again from scratch with the page's own formatting. No word changes."""
+    guard()
+    need(pid)
+    with manual._lock:
+        meta, units, d, eff, allit, items = items_now(pid, did, cur, grp)
+        e = eff[int(cur)] if 0 <= int(cur) < len(eff) else None
+    if not e or e["k"] != "o" or not e.get("tr_on"):
+        raise gr.Error("الإصلاح للصفحات المترجمة فقط (مو الصفحات المستبدلة بصورة)", title="لا يمكن")
+    texts = {i: it["ar"].strip() for i, it in enumerate([it for it in allit if not it["deleted"] and (it["ar"] or "").strip()], 1)}
+    if not texts:
+        raise gr.Error("ما فيه نص مترجم في هذي الصفحة أصلحه. الصق نصها أو ترجمها أول.", title="لا يوجد نص")
+    done, missing, _ = apply_parsed(pid, did, cur, {None: texts}, "إصلاح تنسيق الصفحة", "page")
+    return view(pid, did, cur, grp, f"🔧 رتّبت نص هذي الصفحة من جديد ({done} فقرة) بتنسيق الأصل. تقدر تتراجع." if done else "⚠ ما قدرت أرتّب هذي الصفحة (ما فيها نص أصلي).")

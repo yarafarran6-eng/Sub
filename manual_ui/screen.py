@@ -117,6 +117,7 @@ def _wire(tabs):
     P(F(C["b_rev_page"].click(LONG(h_text.review_page), S + AIS, None, concurrency_id="ai")))
     P(F(C["b_ocr_page"].click(LONG(h_text.ocr_page), S, None, concurrency_id="ai")))
     P(C["b_add"].click(h_text.add_para, S + [C["add_after"]], ALL))
+    P(C["b_fixpg"].click(h_text.fix_page, S, ALL))
     C["style"].blur(h_text.ai_cfg, [C["pid"], C["did"], C["ctx"], C["style"]], C["saved"])
     C["ctx"].blur(h_text.ai_cfg, [C["pid"], C["did"], C["ctx"], C["style"]], C["saved"])
     C["b_ctx"].click(h_text.ai_ctx, [C["pid"], C["did"]], C["ctx"])
