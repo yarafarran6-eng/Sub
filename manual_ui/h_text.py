@@ -247,7 +247,8 @@ def apply_parsed(pid, did, cur, parsed, label, how="file"):
                 continue
             items = cur_items(units, d, eff, pos)[1]
             holes = [i for i, it in enumerate(items, 1) if not it["deleted"] and it.get("en", "").strip() and not (it.get("ar") or "").strip() and not paras.get(i)]
-            if holes and e["k"] == "o" and how == "file" and any(paras.values()):
+            lost = [n for n, t in paras.items() if t and not (1 <= n <= len(items) and not items[n - 1]["deleted"])]      # pasted paragraphs with no place to go
+            if (holes or lost) and e["k"] == "o" and how == "file" and any(paras.values()):
                 # the file's paragraphs do not line up with the page's: some paragraphs of the page would stay EMPTY (a hole in the page).
                 # The whole page is laid out again from the pasted text instead.
                 k = manual.replace_page_text(d, units, e["p"], [t for _, t in sorted(paras.items()) if t], _page_obstacles(pid, e["p"]), _page_font(pid, e["p"]), _page_ink(pid, e["p"], units), _book_scale(pid, units, _page_font(pid, e["p"])), _page_lines(pid, e["p"]))
