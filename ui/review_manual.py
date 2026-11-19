@@ -117,7 +117,7 @@ def generate(pid, did, want_pdf, want_epub, want_txt):
         flow = []
         for p in pages:
             only_pic = not any(e["k"] == "o" and e["p"] == p for e in eff)          # the page is a picture now: only its own pasted text
-            for n, it in enumerate([x for x in manual.page_items(units, d, p) if x["custom"] or not only_pic], 1):
+            for n, it in enumerate([x for x in manual.page_items(units, d, p, only_pic) if x["pic"] or not only_pic], 1):
                 if it["deleted"]:
                     continue
                 flow.append({"id": it["uid"], "kind": "text", "page": p, "translate": True, "text": it["en"], "tr": it["ar"], "n": n,

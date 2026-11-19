@@ -229,6 +229,7 @@ def apply_parsed(pid, did, cur, parsed, label, how="file"):
                 if lst and e.get("op") is not None:
                     tx_pic = tx
                     manual.set_pic_paras(d, tx_pic, e["op"], lst)
+                    d.setdefault("adopted", []).append(e["op"])
                     done += len(lst)
                     touched.add(pos)
                 continue

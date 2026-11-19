@@ -59,6 +59,17 @@ def view(pid, did, pos, grp, msg=""):
     d = manual.load_draft(pid, did)
     eff = manual.effective_plan(d)
     pos = max(0, min(int(pos or 0), len(eff) - 1)) if eff else 0
+    e0 = eff[pos] if eff else None
+    if e0 and e0["k"] == "e" and e0.get("op") is not None and e0["op"] not in d.get("adopted", []):
+        with manual._lock:                # a page that was replaced by a picture keeps the text it had: it becomes editable (once)
+            fresh = manual.load_draft(pid, did)
+            if e0["op"] not in fresh.get("adopted", []):
+                tx = manual.Tx(fresh, "نقل نص الصفحة المستبدلة بصورة")
+                n = manual.adopt_page_text(units, fresh, tx, e0["op"])
+                fresh.setdefault("adopted", []).append(e0["op"])
+                tx.commit() if n else None
+                manual.save_draft(pid, fresh)
+        d = manual.load_draft(pid, did)
     e, items_all = cur_items(units, d, eff, pos)
     ngrp = max(1, -(-len(items_all) // SLOTS))
     grp = max(0, min(int(grp or 0), ngrp - 1))

@@ -478,6 +478,16 @@ def set_pic_paras(d, tx, op, paras):
         tx.set("tr", xid, value=t)
 
 
+def adopt_page_text(units, d, tx, op):
+    """A page that was replaced by a picture keeps the translated text it had (so it stays editable and goes to TXT/EPUB/PDF-text): copied once into hidden paragraphs."""
+    if any(x["page"] == op and x.get("pic") for x in d["extra"].values()):
+        return 0
+    texts = [it["ar"].strip() for it in page_items(units, d, op) if not it["deleted"] and (it["ar"] or "").strip()]
+    if texts:
+        set_pic_paras(d, tx, op, texts)
+    return len(texts)
+
+
 def import_page(pid, path, page_no=1, size=None):
     """Turns a page of another PDF, or an image, into a one-page PDF stored in the project, fitted INSIDE the size of the book's page
     (so it does not come out huge or tiny next to the other pages). Returns the plan entry."""
@@ -821,16 +831,16 @@ def set_range(d, on, a, b, outside):
 
 
 # ----------------------------------------------------------------------------- views for the editor and the builder
-def page_items(units, d, orig_page):
+def page_items(units, d, orig_page, pic=False):
     """The paragraphs of one original page (with the added ones in their place), merged with the draft."""
     items = []
-    extras = [x for x in d["extra"].values() if x["page"] == orig_page]
+    extras = [x for x in d["extra"].values() if x["page"] == orig_page and (pic or not x.get("pic"))]     # (pic: text of a page that became a picture, never drawn)
 
     def view(u):
         st = d["ustyle"].get(u["id"], {})
         ps = d["pstyle"].get(str(orig_page), {})
         src = (d.get("src") or {}).get(u["id"])
-        return {"uid": u["id"], "custom": bool(u.get("custom")), "en": src or u["text"], "has_src": bool(src),
+        return {"uid": u["id"], "custom": bool(u.get("custom")), "pic": bool(u.get("pic")), "en": src or u["text"], "has_src": bool(src),
                 "garbled": (not src) and (not u.get("custom")) and textcheck.garbled(u["text"]), "bbox": u["bbox"],
                 "ar": d["tr"].get(u["id"], ""),
                 "deleted": bool(d["deleted"].get(u["id"])), "def_size": round(u["size"], 1),
