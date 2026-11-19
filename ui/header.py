@@ -28,7 +28,7 @@ def hero_html():
             f"<div class='chips'><span class='hchip'>🔑 مفاتيح مفعّلة: {len(ks)}</span>"
             f"<span class='hchip'>📚 ملفات: {len(js)}{f' (يعمل {run})' if run else ''}</span>"
             f"<span class='hchip'>💰 المصروف: {s['spent_usd']:.3f}$ من {s['budget_usd']}$</span>"
-            f"<span class='hchip' title='رقم نسخة الموقع اللي يشتغل الحين'>🏷 نسخة {BUILD_DATE} · <b>{BUILD_NO}</b></span></div></div>")
+            f"</div></div><div class='buildtag' title='رقم نسخة الموقع اللي يشتغل الحين'>{BUILD_DATE}<b>{BUILD_NO}</b></div>")
 
 
 def banner_html():
