@@ -472,20 +472,24 @@ def set_pic_paras(d, tx, op, paras):
             tx.set("extra", xid, value=MISSING)
             tx.set("tr", xid, value=MISSING)
     for i, t in enumerate(paras):
+        t, en = t if isinstance(t, tuple) else (t, "")
         xid = "X_" + uuid.uuid4().hex[:5]
         tx.set("extra", xid, value={"id": xid, "kind": "text", "translate": True, "custom": True, "page": op, "after": "", "pic": True,
-                                    "bbox": [50.0, 50.0 + i * 30.0, 540.0, 78.0 + i * 30.0], "text": "", "size": 12.0, "bold": False, "color": 0, "align": "left"})
-        tx.set("tr", xid, value=t)
+                                    "bbox": [50.0, 50.0 + i * 30.0, 540.0, 78.0 + i * 30.0], "text": en, "size": 12.0, "bold": False, "color": 0, "align": "left"})
+        if t:
+            tx.set("tr", xid, value=t)
 
 
 def adopt_page_text(units, d, tx, op):
     """A page that was replaced by a picture keeps the translated text it had (so it stays editable and goes to TXT/EPUB/PDF-text): copied once into hidden paragraphs."""
     if any(x["page"] == op and x.get("pic") for x in d["extra"].values()):
         return 0
-    texts = [it["ar"].strip() for it in page_items(units, d, op) if not it["deleted"] and (it["ar"] or "").strip()]
-    if texts:
-        set_pic_paras(d, tx, op, texts)
-    return len(texts)
+    live = [it for it in page_items(units, d, op) if not it["deleted"]]
+    texts = [(it["ar"].strip(), it["en"] or "") for it in live if (it["ar"] or "").strip()]
+    if not texts:                         # nothing translated yet: the page's own paragraphs come back as empty boxes to fill
+        texts = [("", it["en"] or "") for it in live if (it["en"] or "").strip()] or [("", "")]
+    set_pic_paras(d, tx, op, texts)
+    return sum(1 for t, _ in texts if t)          # (empty boxes are not an undoable change of their own)
 
 
 def import_page(pid, path, page_no=1, size=None):

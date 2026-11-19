@@ -628,6 +628,16 @@ def add_para(pid, did, cur, grp, after_n):
         meta, units, d, eff, allit, items = items_now(pid, did, cur, grp)
         p = orig_page(d, cur)
         if p is None:
+            e = eff[cur] if 0 <= cur < len(eff) else None
+            if e and e["k"] == "e" and e.get("op") is not None:        # a page replaced by a picture: one more (hidden, editable) paragraph
+                tx = manual.Tx(d, "إضافة فقرة")
+                k = sum(1 for x in d["extra"].values() if x["page"] == e["op"] and x.get("pic"))
+                xid = "X_" + manual.uuid.uuid4().hex[:5]
+                tx.set("extra", xid, value={"id": xid, "kind": "text", "translate": True, "custom": True, "page": e["op"], "after": "", "pic": True,
+                                            "bbox": [50.0, 50.0 + k * 30.0, 540.0, 78.0 + k * 30.0], "text": "", "size": 12.0, "bold": False, "color": 0, "align": "left"})
+                tx.commit()
+                manual.save_draft(pid, d)
+                return view(pid, did, cur, grp, "➕ أُضيفت فقرة لهذي الصفحة.")
             raise gr.Error("الإضافة ممكنة فقط في الصفحات الأصلية داخل نطاق الترجمة", title="لا يمكن")
         n = int(after_n or 0)
         manual.new_extra(d, units, p, allit[n - 1]["uid"] if 1 <= n <= len(allit) else "")
